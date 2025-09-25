@@ -115,7 +115,6 @@ ehthumbs_vista.db
 *.temp
 
 # BrainBot specific
-run.sh
 *.desktop
 
 # Test files
