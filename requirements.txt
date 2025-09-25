@@ -1,0 +1,15 @@
+# BrainBot Dependencies
+# ===================
+# Core AI and UI framework dependencies for the BrainBot application
+
+# Textual - Modern Terminal User Interface framework
+textual==0.82.0
+
+# Llama C++ Python bindings for local AI inference
+llama-cpp-python==0.3.1
+
+# Hugging Face Hub for downloading AI models
+huggingface-hub==0.25.2
+
+# Rich - Beautiful terminal formatting
+rich==13.9.4

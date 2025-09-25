@@ -1,0 +1,32 @@
+[Unit]
+Description=BrainBot - Child's First Local AI Assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/brainbot
+Environment=PATH=/home/pi/brainbot/venv/bin
+ExecStartPre=/bin/sleep 10
+ExecStart=/home/pi/brainbot/venv/bin/python /home/pi/brainbot/brain_bot.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=brainbot
+
+# Resource limits to prevent system overload
+MemoryMax=2G
+CPUQuota=80%
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/pi/.cache
+
+[Install]
+WantedBy=multi-user.target
