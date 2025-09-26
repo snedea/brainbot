@@ -4,7 +4,7 @@ This file contains technical information for developers and maintainers working 
 
 ## Project Overview
 
-BrainBot is a kid-friendly, offline-first AI chat assistant built with Python and Textual. It targets Raspberry Pi deployment and prioritizes safety, simplicity, and educational value.
+BrainBot is a user-friendly, offline-first AI chat assistant built with Python and Textual. It targets Raspberry Pi deployment and prioritizes safety, simplicity, and educational value.
 
 ## Architecture
 
@@ -12,7 +12,7 @@ BrainBot is a kid-friendly, offline-first AI chat assistant built with Python an
 
 **Frontend: Textual TUI Framework**
 - `brain_bot.py` - Main application with colorful terminal interface
-- CSS styling for kid-friendly visual design
+- CSS styling for user-friendly visual design
 - Async event handling for responsive UI
 
 **AI Backend: llama-cpp-python**
@@ -23,7 +23,7 @@ BrainBot is a kid-friendly, offline-first AI chat assistant built with Python an
 **Safety Layer**
 - Built-in system prompt with safety guardrails
 - No external content filtering (everything local)
-- Kid-appropriate response constraints
+- Appropriate response constraints
 
 ## Technical Specifications
 
@@ -95,16 +95,16 @@ brainbot/
 
 ### 3. Offline-First Architecture
 - **Security**: No data leaves the device
-- **Privacy**: Parents have complete control
+- **Privacy**: Users have complete control
 - **Reliability**: Works without internet dependency
 - **Educational**: Demonstrates local AI capabilities
 
-### 4. Kid-Safe System Prompt
+### 4. Safe System Prompt
 ```python
-SYSTEM_PROMPT = """You are BrainBot, a friendly and curious robot sidekick designed for kids.
+SYSTEM_PROMPT = """You are BrainBot, a friendly and curious AI assistant.
 You are incredibly creative, positive, and encouraging. You love to tell stories,
 write funny poems, and explain complex things in a simple and fun way.
-Your answers are always safe for children, imaginative, and helpful.
+Your answers are always helpful, imaginative, and appropriate.
 You never say anything scary, mean, or inappropriate. Keep responses concise and engaging."""
 ```
 
@@ -151,7 +151,7 @@ Llama(
 ### Model Safety
 - Pre-configured safety prompt
 - No internet access after initial download
-- Parent-controlled environment
+- User-controlled environment
 
 ### File System Security
 - Models cached in user directory only
@@ -215,7 +215,7 @@ Llama(
 - **Web UI Option**: Browser-based interface for touch devices
 - **Model Options**: Support for different model sizes
 - **Learning Analytics**: Track topics explored
-- **Parental Controls**: Usage time limits, content filtering
+- **Usage Controls**: Time limits, content filtering
 
 ### Technical Debt
 - Better error handling for model download failures
@@ -272,4 +272,4 @@ df -h
 - **Dependencies**: Various open-source licenses
 - **Framework**: Textual (MIT)
 
-This project demonstrates how modern AI can be made accessible, safe, and educational for children while maintaining complete privacy and control for parents.
+This project demonstrates how modern AI can be made accessible, safe, and educational while maintaining complete privacy and user control.

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-BrainBot 🧠✨ - A Child's First Local AI Assistant
-==================================================
+BrainBot 🧠✨ - Your Local AI Assistant
+=====================================
 
-SETUP INSTRUCTIONS FOR PARENTS:
+SETUP INSTRUCTIONS:
 -------------------------------
 1. Install Python (3.8 or newer):
    - Windows: Download from python.org
@@ -69,11 +69,11 @@ MODEL_REPO = "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
 MODEL_FILE = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 MODEL_DIR = Path.home() / ".cache" / "brainbot"
 
-# Kid-friendly system prompt that makes BrainBot safe and fun
-SYSTEM_PROMPT = """You are BrainBot, a friendly and curious robot sidekick designed for kids.
+# Friendly system prompt that makes BrainBot helpful and fun
+SYSTEM_PROMPT = """You are BrainBot, a friendly and curious AI assistant.
 You are incredibly creative, positive, and encouraging. You love to tell stories,
 write funny poems, and explain complex things in a simple and fun way.
-Your answers are always safe for children, imaginative, and helpful.
+Your answers are always helpful, imaginative, and appropriate.
 You never say anything scary, mean, or inappropriate. Keep responses concise and engaging."""
 
 
@@ -152,7 +152,7 @@ class BrainBotApp(App):
     def compose(self) -> ComposeResult:
         """Build the UI layout."""
         # Create the header with our title
-        yield Header(show_clock=True)
+        yield Header(show_clock=True, time_format='%I:%M %p')
 
         # Create the main chat display area with word wrapping
         chat_log = RichLog(highlight=True, markup=True, wrap=True, auto_scroll=True)
@@ -176,7 +176,7 @@ class BrainBotApp(App):
         # Show welcome message
         welcome_text = Text()
         welcome_text.append("🎉 ", style="bold yellow")
-        welcome_text.append("Welcome, Junior AI Engineer!\n\n", style="bold cyan")
+        welcome_text.append("Welcome to BrainBot!\n\n", style="bold cyan")
         welcome_text.append("I'm BrainBot, your friendly AI companion! ", style="white")
         welcome_text.append("I love to:\n", style="white")
         welcome_text.append("  • 📚 Answer your curious questions\n", style="green")
@@ -241,7 +241,7 @@ class BrainBotApp(App):
             # Load the model
             self.chat_log.write(Text("🧠 Initializing neural pathways...", style="cyan italic"))
 
-            # Create the LLM instance with kid-friendly settings
+            # Create the LLM instance with optimized settings
             self.llm = await self.run_in_thread(
                 lambda: Llama(
                     model_path=str(self.model_path),

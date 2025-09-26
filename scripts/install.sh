@@ -58,7 +58,7 @@ install_service() {
     SERVICE_FILE="/etc/systemd/system/brainbot.service"
     cat > "$SERVICE_FILE" << EOF
 [Unit]
-Description=BrainBot - Child's First Local AI Assistant
+Description=BrainBot - Your Local AI Assistant
 After=network-online.target
 Wants=network-online.target
 

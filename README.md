@@ -1,19 +1,19 @@
-# 🧠✨ BrainBot - Your Kid's Super Smart Robot Friend!
+# 🧠✨ BrainBot - Your Smart AI Assistant!
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-Compatible-red.svg)](https://www.raspberrypi.org/)
 
-**Meet BrainBot!** 🤖 Your very own colorful AI friend that lives on your computer and never needs the internet after you first meet! Perfect for curious kids who love asking "Why?" and "How?" about everything!
+**Meet BrainBot!** 🤖 Your very own colorful AI friend that lives on your computer and never needs the internet after you first meet! Perfect for anyone who loves asking "Why?" and "How?" about everything!
 
-![BrainBot Demo](https://via.placeholder.com/800x400/2E3440/88C0D0?text=BrainBot+Terminal+Interface)
+![BrainBot Demo](assets/brainbot-demo.png)
 
 ## ✨ What Makes BrainBot So Cool?
 
 - **🎨 Super Colorful Screen**: Bright colors and fun emojis everywhere!
-- **🔒 Always Kid-Safe**: BrainBot only says nice, helpful things
+- **🔒 Always Helpful**: BrainBot only says nice, helpful things
 - **📱 Works Anywhere**: No internet needed once BrainBot moves in
-- **🚀 Easy to Set Up**: Parents can get it running in minutes
+- **🚀 Easy to Set Up**: Get it running in minutes
 - **🎯 Learn While Playing**: Great for homework help and creative fun
 - **💻 Works on Small Computers**: Perfect for Raspberry Pi or old laptops
 
@@ -27,7 +27,7 @@
 - 🤔 **"What's 25 x 4?"** - Homework help that's actually fun!
 - 🎭 **"Pretend you're a pirate and teach me about the ocean!"** - Learning through roleplay!
 
-## 🚀 Getting Started (For Parents)
+## 🚀 Getting Started
 
 **Super Easy Setup!** Just copy and paste these commands:
 
@@ -63,7 +63,7 @@ cd brainbot
 
 ## 🔧 Installation Guide
 
-### For Parents (Non-Technical Setup)
+### Non-Technical Setup
 
 1. **Install Python** (if not already installed):
    - **Raspberry Pi**: `sudo apt update && sudo apt install python3 python3-pip python3-venv`
@@ -191,7 +191,7 @@ Llama(
 2. Review [Raspberry Pi setup guide](docs/SETUP_PI.md)
 3. Open an issue on GitHub
 
-## 🎯 For Kids Who Love to Code!
+## 🎯 For families and friends!
 
 Want to make BrainBot even cooler? Check out the `brain_bot.py` file - it's full of comments explaining how everything works!
 
@@ -201,22 +201,21 @@ You could try:
 - ✨ Adding new emoji reactions
 - 🎵 Making BrainBot respond with ASCII art!
 
-Parents: See `CLAUDE.md` for technical development details.
+See `CLAUDE.md` for technical development details.
 
 ## 📚 Educational Value
 
 BrainBot is designed to be educational:
 
-- **Programming Concepts**: The code is well-commented for curious kids
+- **Programming Concepts**: The code is well-commented for curious minds
 - **AI Understanding**: Demonstrates how AI works locally
 - **Terminal Skills**: Introduces command-line interfaces
 - **Problem Solving**: Encourages asking questions and exploring
 
 ## 🔒 Super Safe and Private!
 
-**Parents, you'll love this:**
+**You'll love this:**
 - 🏠 **Everything stays on YOUR computer** - no data sent anywhere
-- 👶 **Kid-safe responses** - BrainBot is programmed to always be helpful and appropriate
 - 📵 **Works without internet** - once set up, no online connection needed
 - 👀 **You can see all the code** - nothing hidden, everything open!
 
@@ -243,7 +242,7 @@ BrainBot is designed to be educational:
 - 🎮 **Built-in word games and puzzles**
 - 📱 **BrainBot on tablets too!**
 
-*Have your own cool idea? Ask a grown-up to help you suggest it!*
+*Have your own cool idea? Feel free to suggest it on GitHub!*
 
 ## 📄 License
 
@@ -260,11 +259,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **If something isn't working:**
 - 📚 **Check the help docs** in the `docs/` folder
-- 💬 **Ask for help** on GitHub (parents can help with this!)
+- 💬 **Ask for help** on GitHub
 - 🔍 **Look at existing questions** - someone might have had the same problem!
 
 ---
 
-**Made with ❤️ for curious kids and awesome parents!**
+**Made with ❤️ for curious minds everywhere!**
 
 *Keep exploring, keep learning, keep being amazing! 🌟*

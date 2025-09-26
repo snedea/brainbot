@@ -24,7 +24,7 @@ cat << "EOF"
    | |_) | | | (_| | | | | | |_) | (_) | |_
    |____/|_|  \__,_|_|_| |_|____/ \___/ \__|
 
-   🧠✨ Your Child's First Local AI Assistant
+   🧠✨ Your Local AI Assistant
 EOF
 echo -e "${NC}"
 
@@ -190,7 +190,7 @@ if [[ "$PI_MODEL" == *"Raspberry Pi"* ]] && [ -d "$HOME/Desktop" ]; then
 Version=1.0
 Type=Application
 Name=BrainBot
-Comment=Your Child's First Local AI Assistant
+Comment=Your Local AI Assistant
 Exec=$CURRENT_DIR/run.sh
 Icon=utilities-terminal
 Terminal=true
@@ -241,7 +241,7 @@ if [[ "$PI_MODEL" == *"Raspberry Pi"* ]]; then
     echo -e "${YELLOW}  • First model download may take 10-15 minutes${NC}\n"
 fi
 
-echo -e "${GREEN}Happy learning with BrainBot! 🚀${NC}"
+echo -e "${GREEN}Enjoy chatting with BrainBot! 🚀${NC}"
 
 # Deactivate virtual environment
 deactivate

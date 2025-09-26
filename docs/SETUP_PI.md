@@ -259,7 +259,7 @@ free -h
 iotop
 ```
 
-## 🎯 Kid-Friendly Setup Tips
+## 🎯 User-Friendly Setup Tips
 
 ### 1. Create Desktop Shortcut
 The setup script automatically creates a desktop shortcut, but you can customize it:
@@ -277,7 +277,7 @@ Categories=Education;Science;
 StartupWMClass=brainbot
 ```
 
-### 2. Simple Startup Instructions for Kids
+### 2. Quick Start Guide
 
 Create a file `START_BRAINBOT.txt` on the desktop:
 ```
@@ -295,9 +295,9 @@ Create a file `START_BRAINBOT.txt` on the desktop:
 - "Write a funny poem"
 ```
 
-### 3. Parental Controls
+### 3. Usage Monitoring
 
-Add basic monitoring:
+Add basic conversation logging:
 ```bash
 # Log all conversations (optional)
 mkdir -p ~/brainbot_logs
