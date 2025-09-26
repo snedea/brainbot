@@ -11,7 +11,7 @@
 ## ✨ What Makes BrainBot So Cool?
 
 - **🎨 Super Colorful Screen**: Bright colors and fun emojis everywhere!
-- **🔒 Always Kid-Safe**: BrainBot only says nice, helpful things
+- **🛡️ Enhanced Safety System**: Two-model architecture with content moderation
 - **📱 Works Anywhere**: No internet needed once BrainBot moves in
 - **🚀 Easy to Set Up**: Parents can get it running in minutes
 - **🎯 Learn While Playing**: Great for homework help and creative fun
@@ -42,6 +42,19 @@ cd brainbot
 ./setup.sh
 
 # Start chatting with BrainBot
+./run.sh
+```
+
+### 🛡️ For Enhanced Safety Mode (Recommended)
+
+```bash
+# Set up the dual-model safety system
+bash scripts/setup_models.sh
+
+# Run both safety servers
+python scripts/run_dual_models.py
+
+# In another terminal, run BrainBot
 ./run.sh
 ```
 
@@ -216,9 +229,13 @@ BrainBot is designed to be educational:
 
 **Parents, you'll love this:**
 - 🏠 **Everything stays on YOUR computer** - no data sent anywhere
-- 👶 **Kid-safe responses** - BrainBot is programmed to always be helpful and appropriate
+- 👶 **Enhanced safety system** - Two-model architecture with content filtering
+- 🛡️ **Age-appropriate content** - Automatic moderation of inputs and outputs
+- 🔐 **Parent PIN protection** - Settings and transcripts require parent access
 - 📵 **Works without internet** - once set up, no online connection needed
 - 👀 **You can see all the code** - nothing hidden, everything open!
+
+**Important**: Designed for family/education use with on-device safeguards. Parental supervision recommended. No guarantee all unsafe content is prevented.
 
 ## 📖 Technical Details
 

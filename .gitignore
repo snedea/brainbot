@@ -70,6 +70,12 @@ venv.bak/
 models/
 model_cache/
 
+# Safety system models (DO NOT COMMIT)
+models/generation/
+models/moderation/
+*.ggml
+*.gguf
+
 # macOS
 .DS_Store
 .AppleDouble

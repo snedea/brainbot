@@ -1,0 +1,11 @@
+# GBNF Grammar for Safety Classification JSON
+# Forces strict JSON output from the guard model
+
+root            ::= object
+object          ::= "{" ws "\"allowed\"" ws ":" ws boolean ws "," ws "\"categories\"" ws ":" ws array ws ("," ws "\"rationale\"" ws ":" ws string)? ws "}"
+array           ::= "[" ws (string (ws "," ws string)*)? ws "]"
+boolean         ::= "true" | "false"
+string          ::= "\"" chars "\""
+chars           ::= char*
+char            ::= [^"\\] | "\\" ["\\/bfnrt]
+ws              ::= [ \t\n\r]*

@@ -13,3 +13,15 @@ huggingface-hub==0.25.2
 
 # Rich - Beautiful terminal formatting
 rich==13.9.4
+
+# Safety System Dependencies
+# ==========================
+
+# HTTP requests for dual-model communication
+requests==2.31.0
+
+# PIN hashing for parental controls
+argon2-cffi==23.1.0
+
+# Testing
+pytest==7.4.3
