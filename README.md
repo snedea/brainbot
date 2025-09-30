@@ -11,11 +11,48 @@
 ## ✨ What Makes BrainBot So Cool?
 
 - **🎨 Super Colorful Screen**: Bright colors and fun emojis everywhere!
+- **🔊 Speaks Out Loud!**: BrainBot can read responses to you with text-to-speech!
 - **🔒 Always Helpful**: BrainBot only says nice, helpful things
 - **📱 Works Anywhere**: No internet needed once BrainBot moves in
 - **🚀 Easy to Set Up**: Get it running in minutes
 - **🎯 Learn While Playing**: Great for homework help and creative fun
 - **💻 Works on Small Computers**: Perfect for Raspberry Pi or old laptops
+- **🖱️ Desktop Shortcut**: Double-click to launch from your desktop!
+
+## 🎤 Voice Mode (New!)
+
+**Talk to BrainBot like a real AI assistant!** The new voice mode lets you have natural conversations with BrainBot using just your voice.
+
+### ✨ Voice Features
+- **🎙️ Wake Word Activation**: Say "Computer" to start talking!
+- **🗣️ Natural Speech**: Ask questions by speaking naturally
+- **👂 Smart Listening**: Automatically detects when you're done talking
+- **🔊 Speaks Responses**: BrainBot answers out loud with natural voice
+- **🔒 100% Offline**: All voice processing happens on your device
+- **🆓 Completely Free**: No subscriptions or cloud API costs
+
+### 🚀 Quick Voice Setup
+
+```bash
+# One-time setup (10-15 minutes)
+./setup_voice.sh
+
+# Get free Porcupine key from https://console.picovoice.ai/
+# Add it to .env file
+
+# Launch voice mode
+./launch_voice.sh
+```
+
+**That's it!** Say "Computer" followed by your question, and BrainBot will respond with voice!
+
+📖 **Detailed guide**: See [VOICE_MODE.md](VOICE_MODE.md) for complete documentation
+
+### Voice Requirements
+- 🎤 USB microphone or 3.5mm mic
+- 🔊 Speaker or headphones
+- 🔑 Free Porcupine API key (get at [console.picovoice.ai](https://console.picovoice.ai/))
+- 💾 Extra ~200MB for voice models
 
 ## 🎮 What Can You Do with BrainBot?
 
@@ -60,13 +97,14 @@ cd brainbot
 - **About 1GB of space** (for BrainBot's brain)
 - **2-4GB of memory** (most computers have this)
 - **Internet connection** (just once, to download BrainBot)
+- **Speakers/Headphones** (optional, for text-to-speech feature)
 
 ## 🔧 Installation Guide
 
 ### Non-Technical Setup
 
-1. **Install Python** (if not already installed):
-   - **Raspberry Pi**: `sudo apt update && sudo apt install python3 python3-pip python3-venv`
+1. **Install Python and Audio Support** (if not already installed):
+   - **Raspberry Pi**: `sudo apt update && sudo apt install python3 python3-pip python3-venv espeak`
    - **Windows**: Download from [python.org](https://python.org)
    - **Mac**: Install via Homebrew: `brew install python3`
 
@@ -99,11 +137,28 @@ On the first run, BrainBot will:
 
 ## 🎮 How to Use
 
-1. **Start the application**: Run `python brain_bot.py`
+### Text Mode (Default)
+1. **Start the application**:
+   - Run `./run.sh` from terminal, OR
+   - Double-click the **BrainBot 🧠✨** desktop shortcut
 2. **Type your question**: Use the input box at the bottom
 3. **Press Enter**: BrainBot will think and respond
-4. **Keep chatting**: Ask follow-up questions or try new topics
-5. **Exit**: Press `Ctrl+C` or `Ctrl+Q`
+4. **Toggle Voice Output**:
+   - Press `Ctrl+T` to turn text-to-speech on/off
+   - Look for status in top-right: 🔊 TTS: ON or 🔇 TTS: OFF
+   - When ON, BrainBot reads all responses aloud!
+5. **Keep chatting**: Ask follow-up questions or try new topics
+6. **Exit**: Press `Ctrl+C` or `Ctrl+Q`
+
+### Voice Mode (NEW!)
+1. **Launch voice mode**: `python3 brain_bot.py --voice` or `./launch_voice.sh`
+2. **Say wake word**: "Computer" (wait for listening indicator)
+3. **Ask your question**: Speak naturally, BrainBot detects when you're done
+4. **Hear response**: BrainBot speaks the answer aloud
+5. **Type still works**: You can mix voice and text interactions!
+6. **Test audio first**: Run `python3 brain_bot.py --test-audio` to check your mic
+
+📖 Full voice mode guide: [VOICE_MODE.md](VOICE_MODE.md) | Quick start: [LAUNCH_GUIDE.md](LAUNCH_GUIDE.md)
 
 ### Cool Conversations with BrainBot! 💬
 
@@ -180,6 +235,12 @@ Llama(
 - Close other applications
 - Check available RAM
 
+**Text-to-Speech not working:**
+- Install espeak: `sudo apt install espeak` (Raspberry Pi/Linux)
+- Check volume settings on your system
+- Verify speakers/headphones are connected
+- Press `Ctrl+T` to toggle TTS on
+
 **UI looks broken:**
 - Update terminal/terminal emulator
 - Try different terminal size
@@ -236,11 +297,13 @@ BrainBot is designed to be educational:
 ## 🔮 Cool Ideas for the Future!
 
 **What would make BrainBot even more awesome?**
-- 🎤 **Talk to BrainBot with your voice!** (instead of typing)
+- ~~🔊 **BrainBot speaks responses out loud!**~~ ✅ Done! Press Ctrl+T to enable!
+- ~~🎤 **Talk to BrainBot with your voice!**~~ ✅ Done! Use `--voice` flag for full voice assistant!
 - 🎨 **BrainBot draws pictures with text!** (ASCII art)
 - 📊 **Keep track of what you're learning**
 - 🎮 **Built-in word games and puzzles**
 - 📱 **BrainBot on tablets too!**
+- 🌍 **Multi-language support** (voice mode supports 90+ languages with different models)
 
 *Have your own cool idea? Feel free to suggest it on GitHub!*
 

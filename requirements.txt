@@ -13,3 +13,18 @@ huggingface-hub==0.25.2
 
 # Rich - Beautiful terminal formatting
 rich==13.9.4
+
+# Pyttsx3 - Text-to-speech for reading responses aloud
+pyttsx3==2.90
+
+# Voice Mode Dependencies
+# =======================
+
+# Porcupine - Wake word detection ("Hey Computer")
+pvporcupine==3.0.0
+
+# PyAudio - Audio input/output for recording and playback
+pyaudio==0.2.14
+
+# Python-dotenv - Environment variable management
+python-dotenv==1.0.0

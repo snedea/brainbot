@@ -44,6 +44,7 @@ REQUIRED PACKAGES:
 import os
 import sys
 import threading
+import logging
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
@@ -134,6 +135,7 @@ class BrainBotApp(App):
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", priority=True),
         Binding("ctrl+q", "quit", "Quit"),
+        Binding("ctrl+space", "trigger_wake", "Wake"),
     ]
 
     # Set the app title
@@ -148,6 +150,7 @@ class BrainBotApp(App):
         self.llm: Optional[Llama] = None
         self.model_path: Optional[Path] = None
         self.is_processing = False
+        self.voice_agent = None  # Will be set when voice mode is enabled
 
     def compose(self) -> ComposeResult:
         """Build the UI layout."""
@@ -164,6 +167,14 @@ class BrainBotApp(App):
         input_box.border_title = "✏️ Your Message"
         yield input_box
 
+        # Create voice status indicator (shown only in voice mode)
+        voice_status = Static("", id="voice_status")
+        voice_status.styles.dock = "top"
+        voice_status.styles.align = ("right", "top")
+        voice_status.styles.padding = (0, 2)
+        voice_status.styles.color = "#808080"
+        yield voice_status
+
         # Add footer with instructions
         yield Footer()
 
@@ -172,6 +183,7 @@ class BrainBotApp(App):
         # Get references to our widgets
         self.chat_log = self.query_one(RichLog)
         self.input_box = self.query_one(Input)
+        self.voice_status = self.query_one("#voice_status", Static)
 
         # Show welcome message
         welcome_text = Text()
@@ -183,6 +195,7 @@ class BrainBotApp(App):
         welcome_text.append("  • 📝 Help you write stories and poems\n", style="green")
         welcome_text.append("  • 🎨 Create fun word games\n", style="green")
         welcome_text.append("  • 🔬 Explain how things work\n", style="green")
+        welcome_text.append("\n", style="white")
         welcome_text.append("\nWhat would you like to talk about today?", style="italic cyan")
 
         self.chat_log.write(welcome_text)
@@ -334,6 +347,10 @@ class BrainBotApp(App):
             self.chat_log.write(bot_text)
             self.chat_log.write("")  # Add spacing
 
+            # Speak the response if TTS is enabled
+            if self.tts_enabled and self.tts_engine and bot_response:
+                self.speak_text(bot_response)
+
         except Exception as e:
             # Handle any errors
             error_text = Text()
@@ -350,18 +367,260 @@ class BrainBotApp(App):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, func)
 
+    def action_trigger_wake(self) -> None:
+        """Manually trigger wake word detection (simulates saying 'Computer')."""
+        if not self.voice_agent or not hasattr(self.voice_agent, '_on_wake_detected'):
+            self.chat_log.write(Text("⚠️ Voice mode is not active.",
+                                    style="yellow italic"))
+            return
+
+        # Trigger the wake word callback manually
+        self.voice_agent._on_wake_detected()
+        self.chat_log.write(Text("🎤 Wake word triggered! Listening...",
+                                 style="cyan italic"))
+        self.chat_log.write("")  # Add spacing
+
+
+class VoiceHooks:
+    """
+    Integration hooks for voice mode.
+
+    This class bridges the voice agent with the BrainBot TUI,
+    allowing voice interactions to appear in the chat interface.
+    """
+
+    def __init__(self, brain_bot_app: BrainBotApp):
+        """
+        Initialize voice hooks.
+
+        Args:
+            brain_bot_app: Reference to the BrainBotApp instance
+        """
+        self.app = brain_bot_app
+        self.current_state = "IDLE"
+
+    def on_state_change(self, state):
+        """
+        Update UI based on voice agent state.
+
+        Args:
+            state: VoiceAgentState enum value
+        """
+        from agent.voice_agent import VoiceAgentState
+
+        state_indicators = {
+            VoiceAgentState.IDLE: "🎤 Ready",
+            VoiceAgentState.LISTENING: "🔴 Recording...",
+            VoiceAgentState.TRANSCRIBING: "⚙️  Transcribing...",
+            VoiceAgentState.THINKING: "🧠 Thinking...",
+            VoiceAgentState.SPEAKING: "🔊 Speaking...",
+            VoiceAgentState.ERROR: "❌ Error"
+        }
+
+        status_text = state_indicators.get(state, "🎤 Ready")
+        self.current_state = status_text
+
+        # Update voice status widget (thread-safe)
+        if hasattr(self.app, 'voice_status'):
+            self.app.call_from_thread(
+                self._update_voice_status,
+                status_text
+            )
+
+    def _update_voice_status(self, text: str):
+        """Helper method to update voice status (runs on main thread)."""
+        self.app.voice_status.update(text)
+
+    def on_transcript(self, text: str):
+        """
+        Handle transcribed user speech.
+
+        Args:
+            text: Transcribed user text
+        """
+        if text and text.strip():
+            # Add user message to chat (thread-safe)
+            self.app.call_from_thread(
+                self.app.chat_log.write,
+                Text(f"👤 You: {text}", style="bold cyan")
+            )
+
+    def on_response(self, text: str):
+        """
+        Handle LLM response.
+
+        Args:
+            text: Generated response text
+        """
+        if text and text.strip():
+            # Add AI response to chat (thread-safe)
+            self.app.call_from_thread(
+                self.app.chat_log.write,
+                Text(f"🤖 BrainBot: {text}", style="bold green")
+            )
+            self.app.call_from_thread(
+                self.app.chat_log.write,
+                ""  # Add spacing
+            )
+
 
 def main():
     """Main entry point for BrainBot."""
+    import argparse
+
     # Check Python version
     if sys.version_info < (3, 8):
         print("❌ BrainBot requires Python 3.8 or newer!")
         print("Please upgrade Python and try again.")
         sys.exit(1)
 
+    # Configure logging to file (keeps TUI clean)
+    log_dir = Path.home() / ".cache" / "brainbot"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "brainbot.log"
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        filename=str(log_file),
+        filemode='a'  # Append mode
+    )
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='BrainBot - Your friendly local AI assistant',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python brain_bot.py              Run in text mode (default)
+  python brain_bot.py --voice      Enable voice mode with wake word
+  python brain_bot.py --test-audio Test microphone and audio devices
+        """
+    )
+
+    parser.add_argument(
+        '--voice',
+        action='store_true',
+        help='Enable voice mode with wake word detection'
+    )
+
+    parser.add_argument(
+        '--test-audio',
+        action='store_true',
+        help='Test audio devices and exit (no chat interface)'
+    )
+
+    args = parser.parse_args()
+
+    # Test audio if requested
+    if args.test_audio:
+        print("🎤 Running audio device test...\n")
+        try:
+            from scripts.audio_check import main as audio_main
+            audio_main()
+        except ImportError as e:
+            print(f"❌ Could not import audio_check: {e}")
+            print("Make sure all voice dependencies are installed.")
+        return
+
+    # Initialize voice mode if requested
+    voice_agent = None
+    if args.voice:
+        try:
+            print("🎙️  Initializing voice mode...")
+
+            # Import voice components
+            from config import load_voice_config, ENV_LOADER_AVAILABLE
+            from agent.voice_agent import VoiceAgent
+
+            if not ENV_LOADER_AVAILABLE:
+                print("❌ Voice mode requires python-dotenv")
+                print("Install it with: pip install python-dotenv")
+                sys.exit(1)
+
+            # Load voice configuration
+            config = load_voice_config()
+            print("✅ Voice configuration loaded")
+
+            # Note: Voice agent will be started after the app is created
+            # so we can hook into the app's UI
+
+        except ValueError as e:
+            print(f"❌ Configuration error: {e}")
+            print("\nPlease edit your .env file and add required settings.")
+            print("Copy .env.example to .env if you haven't already.")
+            sys.exit(1)
+
+        except FileNotFoundError as e:
+            print(f"❌ Missing files: {e}")
+            print("\nRun ./setup_voice.sh to install voice mode dependencies.")
+            sys.exit(1)
+
+        except Exception as e:
+            print(f"❌ Failed to initialize voice mode: {e}")
+            import traceback
+            traceback.print_exc()
+            print("\nContinuing in text-only mode...")
+            args.voice = False
+
     # Create and run the app
     app = BrainBotApp()
-    app.run()
+
+    # Start voice agent if enabled
+    if args.voice and 'config' in locals():
+        try:
+            # Create hooks to bridge voice agent with UI
+            hooks = VoiceHooks(app)
+
+            # Create voice agent
+            voice_agent = VoiceAgent(
+                config=config,
+                on_state_change=hooks.on_state_change,
+                on_transcript=hooks.on_transcript,
+                on_response=hooks.on_response
+            )
+
+            # Start voice agent in background thread
+            # Note: VoiceAgent is already a Thread, so just call start() directly
+            print("🔄 Starting voice agent components...")
+            voice_agent.start()
+
+            # Wait for initialization to complete before starting TUI
+            # This ensures all ALSA messages appear before the TUI takes over
+            print("⏳ Waiting for components to initialize...")
+            if voice_agent.wait_for_initialization(timeout=30.0):
+                # Store voice agent in app for manual wake trigger
+                app.voice_agent = voice_agent
+
+                # Show voice mode indicator
+                keywords = config.wake_keywords or ["wake word"]
+                print(f"✅ Voice mode active! Say '{keywords[0]}' to interact")
+                print("   Text mode still works - just type normally")
+                print(f"   Press Ctrl+Space to manually trigger wake")
+                print(f"   Logs saved to: {log_file}\n")
+            else:
+                print("⚠️  Voice agent initialization timed out")
+                print("Continuing in text-only mode...\n")
+                voice_agent = None
+
+        except Exception as e:
+            print(f"⚠️  Could not start voice agent: {e}")
+            print("Continuing in text-only mode...\n")
+            voice_agent = None
+
+    try:
+        # Run the Textual app
+        app.run()
+    except KeyboardInterrupt:
+        print("\n👋 Shutting down BrainBot...")
+    finally:
+        # Stop voice agent if running
+        if voice_agent:
+            try:
+                voice_agent.stop()
+                print("✅ Voice agent stopped")
+            except:
+                pass
 
 
 if __name__ == "__main__":
