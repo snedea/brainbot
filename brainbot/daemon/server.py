@@ -497,7 +497,7 @@ class BrainBotDaemon:
         last_state_save = time.time()
         state_save_interval = 60  # Save state every minute
 
-        logger.info(f"Entering main loop (tick interval: {tick_interval}s)")
+        logger.debug(f"Main loop started (tick: {tick_interval}s)")
 
         try:
             while self.running:
@@ -845,7 +845,7 @@ Write as a journal entry with today's date:
             on_session_end=self._save_conversation,
         )
         self.terminal.start()
-        logger.info("Terminal interface started")
+        logger.debug("Terminal interface started")
 
     def _stop_terminal(self) -> None:
         """Stop the terminal interface."""

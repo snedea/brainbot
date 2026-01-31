@@ -8,26 +8,66 @@ from datetime import datetime
 from typing import Callable, Optional, TYPE_CHECKING
 from enum import Enum
 
-# Rainbow colors for BrainBot name
-RAINBOW_COLORS = [
-    "\033[31m",  # Red
-    "\033[33m",  # Yellow
-    "\033[32m",  # Green
-    "\033[36m",  # Cyan
-    "\033[34m",  # Blue
-    "\033[35m",  # Magenta
+# Rainbow colors (ANSI 256-color for smooth gradients)
+RAINBOW = [
+    "\033[38;5;196m",  # Red
+    "\033[38;5;202m",  # Orange
+    "\033[38;5;208m",  # Light Orange
+    "\033[38;5;214m",  # Gold
+    "\033[38;5;220m",  # Yellow
+    "\033[38;5;226m",  # Bright Yellow
+    "\033[38;5;154m",  # Yellow-Green
+    "\033[38;5;118m",  # Green
+    "\033[38;5;48m",   # Cyan-Green
+    "\033[38;5;51m",   # Cyan
+    "\033[38;5;45m",   # Light Blue
+    "\033[38;5;39m",   # Blue
+    "\033[38;5;63m",   # Purple-Blue
+    "\033[38;5;129m",  # Purple
+    "\033[38;5;165m",  # Magenta
+    "\033[38;5;201m",  # Pink
 ]
+BOLD = "\033[1m"
 RESET = "\033[0m"
+CYAN = "\033[36m"
+
+# ASCII Art for BRAINBOT
+BRAINBOT_ASCII = r'''
+ ██████╗ ██████╗  █████╗ ██╗███╗   ██╗██████╗  ██████╗ ████████╗
+ ██╔══██╗██╔══██╗██╔══██╗██║████╗  ██║██╔══██╗██╔═══██╗╚══██╔══╝
+ ██████╔╝██████╔╝███████║██║██╔██╗ ██║██████╔╝██║   ██║   ██║
+ ██╔══██╗██╔══██╗██╔══██║██║██║╚██╗██║██╔══██╗██║   ██║   ██║
+ ██████╔╝██║  ██║██║  ██║██║██║ ╚████║██████╔╝╚██████╔╝   ██║
+ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═════╝  ╚═════╝    ╚═╝
+'''
+
+
+def rainbow_line(line: str, offset: int = 0) -> str:
+    """Apply rainbow gradient to a single line."""
+    result = []
+    for i, char in enumerate(line):
+        if char != ' ' and char != '\n':
+            color_idx = (i + offset) % len(RAINBOW)
+            result.append(f"{BOLD}{RAINBOW[color_idx]}{char}")
+        else:
+            result.append(char)
+    result.append(RESET)
+    return "".join(result)
+
+
+def rainbow_ascii_art(art: str) -> str:
+    """Apply rainbow gradient across ASCII art."""
+    lines = art.split('\n')
+    result = []
+    for row, line in enumerate(lines):
+        # Offset each row for diagonal gradient effect
+        result.append(rainbow_line(line, offset=row * 2))
+    return '\n'.join(result)
 
 
 def rainbow_text(text: str) -> str:
     """Apply rainbow colors to text."""
-    result = []
-    for i, char in enumerate(text):
-        color = RAINBOW_COLORS[i % len(RAINBOW_COLORS)]
-        result.append(f"{color}{char}")
-    result.append(RESET)
-    return "".join(result)
+    return rainbow_line(text)
 
 if TYPE_CHECKING:
     from ..state.manager import StateManager
@@ -103,7 +143,7 @@ class TerminalInterface:
             daemon=True,
         )
         self._input_thread.start()
-        logger.info("Terminal interface started")
+        logger.debug("Terminal interface started")
 
     def stop(self) -> None:
         """Stop the terminal interface."""
@@ -211,7 +251,7 @@ class TerminalInterface:
                     continue
 
                 if user_input.lower() in ("quit", "exit", "q"):
-                    print("Goodbye!")
+                    print(f"\n{CYAN}🧠 See you later! Sweet dreams! 💤{RESET}\n")
                     self._save_on_exit()
                     break
 
@@ -238,18 +278,12 @@ class TerminalInterface:
 
     def _print_welcome(self) -> None:
         """Print welcome message."""
-        print("\n" + "=" * 50)
-        print(f"  🧠 {rainbow_text('BrainBot')} Terminal Interface")
-        print("=" * 50)
-        print("\nCommands:")
-        print("  /status    - Show BrainBot's current status")
-        print("  /goals     - Show today's goals")
-        print("  /story     - Request a bedtime story")
-        print("  /project   - Show current project")
-        print("  /help      - Show this help")
-        print("  /quit      - Exit")
-        print("\nOr just type a message to chat!")
-        print("-" * 50)
+        print("\n")
+        print(rainbow_ascii_art(BRAINBOT_ASCII))
+        print(f"                    🧠 {BOLD}{CYAN}Your Autonomous AI Friend{RESET} 🧠")
+        print()
+        print(f"  {CYAN}Just type to chat, or use /help for commands{RESET}")
+        print()
 
     def _handle_command(self, command: str) -> str:
         """Handle a command."""
