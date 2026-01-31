@@ -97,7 +97,8 @@ class ClaudeDelegator:
 
         # Build command
         # --dangerously-skip-permissions allows unattended daemon operation
-        cmd = ["claude", "--print", "--dangerously-skip-permissions", full_task]
+        # No --print flag so Claude Code can execute tools (bash, file ops, etc.)
+        cmd = ["claude", "--dangerously-skip-permissions", full_task]
 
         logger.debug(f"Delegating to Claude ({len(full_task)} chars)")
         start_time = time.time()
