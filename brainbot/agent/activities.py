@@ -210,7 +210,7 @@ class ActivitySelector:
         """Pick a topic to learn about."""
         topics = [
             "Python best practices",
-            "Raspberry Pi GPIO projects",
+            "Hardware and embedded projects",
             "AI/ML concepts",
             "Web development",
             "Game development",

@@ -175,7 +175,7 @@ def main(argv: Optional[list] = None) -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
         prog="brainbot",
-        description="BrainBot - Autonomous Living Agent for Raspberry Pi 5",
+        description="BrainBot - Autonomous AI Agent",
     )
     parser.add_argument(
         "--config", "-c",
