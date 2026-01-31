@@ -151,6 +151,9 @@ class BrainBotDaemon:
 
         self._logging_configured = True
 
+        # Quiet noisy third-party loggers
+        logging.getLogger("apscheduler").setLevel(logging.WARNING)
+
     def _write_pid_file(self) -> None:
         """Write PID file."""
         try:

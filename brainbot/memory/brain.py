@@ -162,8 +162,8 @@ class BrainMemory:
                 warnings.append(pattern)
 
         if warnings:
-            # Log the attempt
-            logger.warning(f"Potential prompt injection detected: {warnings}")
+            # Log at debug level - this often triggers on legitimate conversation history
+            logger.debug(f"Sanitizing patterns in memory: {warnings}")
 
             # Neutralize by escaping or marking
             sanitized = content

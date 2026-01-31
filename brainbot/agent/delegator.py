@@ -99,7 +99,7 @@ class ClaudeDelegator:
         # --dangerously-skip-permissions allows unattended daemon operation
         cmd = ["claude", "--print", "--dangerously-skip-permissions", full_task]
 
-        logger.info(f"Delegating task to Claude: {task[:100]}...")
+        logger.debug(f"Delegating to Claude ({len(full_task)} chars)")
         start_time = time.time()
 
         # Serialize delegations to prevent concurrent process issues
