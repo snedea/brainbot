@@ -137,7 +137,7 @@ class ClaudeDelegator:
                 )
 
                 if success:
-                    logger.info(f"Task completed successfully in {duration:.1f}s")
+                    logger.debug(f"Task completed successfully in {duration:.1f}s")
                 else:
                     logger.warning(f"Task failed with exit code {exit_code}")
 

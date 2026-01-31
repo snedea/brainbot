@@ -892,7 +892,7 @@ You can reference your memories and what you've been working on."""
         history = self.terminal.get_conversation_history() if self.terminal else []
 
         # Delegate to Claude
-        logger.info(f"Chat message received: {message[:50]}...")
+        logger.debug(f"Chat message received: {message[:50]}...")
         result = self.delegator.delegate_for_chat(
             message=message,
             personality_context=personality,
@@ -902,7 +902,7 @@ You can reference your memories and what you've been working on."""
 
         if result.success:
             response = result.output.strip()
-            logger.info(f"Chat response: {response[:50]}...")
+            logger.debug(f"Chat response: {response[:50]}...")
             return response
         else:
             logger.warning(f"Chat delegation failed: {result.error}")
