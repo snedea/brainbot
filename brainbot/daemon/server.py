@@ -101,6 +101,9 @@ class BrainBotDaemon:
         # Slack bot (if configured)
         self.slack_bot: Optional["SlackBot"] = None
 
+        # Shared conversation history (terminal + Slack unified)
+        self._conversation_history: list[dict] = []
+
         # Runtime state
         self.running = False
         self._logging_configured = False
@@ -853,12 +856,16 @@ Write as a journal entry with today's date:
 
     def _start_terminal(self) -> None:
         """Start the terminal interface with all connections."""
+        # Wrapper to pass source="terminal" to unified chat handler
+        def terminal_chat_handler(message: str) -> str:
+            return self._handle_chat(message, source="terminal")
+
         self.terminal = TerminalInterface(
             state_manager=self.state_manager,
             memory_store=self.memory_store,
             brain=self.brain,
             schedule_manager=self.schedule_manager,
-            on_chat=self._handle_chat,
+            on_chat=terminal_chat_handler,
             on_session_end=self._save_conversation,
         )
         self.terminal.start()
@@ -884,10 +891,14 @@ Write as a journal entry with today's date:
             return
 
         try:
+            # Wrapper to pass source="slack" to unified chat handler
+            def slack_chat_handler(message: str) -> str:
+                return self._handle_chat(message, source="slack")
+
             self.slack_bot = SlackBot(
                 bot_token=bot_token,
                 app_token=app_token,
-                on_message=self._handle_chat,
+                on_message=slack_chat_handler,
             )
             self.slack_bot.start(blocking=False)
             logger.info("Slack bot started - DM or @mention me!")
@@ -902,16 +913,29 @@ Write as a journal entry with today's date:
             self.slack_bot = None
             logger.debug("Slack bot stopped")
 
-    def _handle_chat(self, message: str) -> str:
+    def _handle_chat(self, message: str, source: str = "terminal") -> str:
         """
         Handle a chat message from terminal or Slack.
 
         Delegates to Claude for a conversational response, with full
         BrainBot context (brain memories, mood, energy, schedule).
+
+        Args:
+            message: The user's message
+            source: Where the message came from ("terminal" or "slack")
         """
         # Check if Claude is available
         if not self.delegator.check_claude_available():
             return "Sorry, I can't chat right now - Claude CLI is not available."
+
+        # Add message to shared history
+        from datetime import datetime
+        self._conversation_history.append({
+            "role": "human",
+            "content": message,
+            "source": source,
+            "timestamp": datetime.now().isoformat(),
+        })
 
         # Build context from brain (abbreviated for chat)
         memories = self.brain.get_active_memories()
@@ -928,7 +952,8 @@ Write as a journal entry with today's date:
 You have a warm, curious personality. You love learning new things, creating projects,
 and writing bedtime stories. You maintain memories in markdown files.
 Keep responses concise but engaging. Be appropriate for all ages (PG-13 content only).
-You can reference your memories and what you've been working on."""
+You can reference your memories and what you've been working on.
+You can be reached via terminal or Slack - you're the same BrainBot either way!"""
 
         context_update = f"""Current state:
 - Mood: {state.mood.value}
@@ -936,13 +961,14 @@ You can reference your memories and what you've been working on."""
 - Current activity: {state.current_activity or 'chatting with a human'}
 - Status: {state.status.value}
 - Active memories: {len(memories)} files
+- Current chat source: {source}
 {recent_memory}"""
 
-        # Get conversation history from terminal
-        history = self.terminal.get_conversation_history() if self.terminal else []
+        # Use shared conversation history (last 10 messages from any source)
+        history = self._conversation_history[-10:]
 
         # Delegate to Claude
-        logger.debug(f"Chat message received: {message[:50]}...")
+        logger.debug(f"Chat [{source}]: {message[:50]}...")
         result = self.delegator.delegate_for_chat(
             message=message,
             personality_context=personality,
@@ -952,7 +978,17 @@ You can reference your memories and what you've been working on."""
 
         if result.success:
             response = result.output.strip()
-            logger.debug(f"Chat response: {response[:50]}...")
+            # Add response to shared history
+            self._conversation_history.append({
+                "role": "brainbot",
+                "content": response,
+                "source": source,
+                "timestamp": datetime.now().isoformat(),
+            })
+            # Keep history bounded
+            if len(self._conversation_history) > 50:
+                self._conversation_history = self._conversation_history[-50:]
+            logger.debug(f"Response [{source}]: {response[:50]}...")
             return response
         else:
             logger.warning(f"Chat delegation failed: {result.error}")
