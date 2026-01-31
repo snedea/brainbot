@@ -33,6 +33,13 @@ from ..agent.delegator import ClaudeDelegator
 from ..interaction.terminal import TerminalInterface
 from .watchdog import Watchdog, ProcessWatchdog
 
+# Optional Slack integration
+try:
+    from ..integrations.slack_bot import SlackBot, SLACK_AVAILABLE
+except ImportError:
+    SLACK_AVAILABLE = False
+    SlackBot = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -90,6 +97,9 @@ class BrainBotDaemon:
 
         # Terminal interface (only in foreground mode)
         self.terminal: Optional[TerminalInterface] = None
+
+        # Slack bot (if configured)
+        self.slack_bot: Optional["SlackBot"] = None
 
         # Runtime state
         self.running = False
@@ -447,8 +457,12 @@ class BrainBotDaemon:
             logger.info("Running in foreground (Ctrl+C to stop)")
             # Start terminal interface in foreground mode
             self._start_terminal()
+            # Start Slack bot if configured (runs in background thread)
+            self._start_slack()
         else:
             logger.info("Running in background")
+            # Start Slack bot if configured
+            self._start_slack()
 
         # Report success to parent
         self._report_status(True)
@@ -468,6 +482,9 @@ class BrainBotDaemon:
 
         # Stop terminal interface
         self._stop_terminal()
+
+        # Stop Slack bot
+        self._stop_slack()
 
         # Cancel any active delegations
         if self.delegator:
@@ -853,11 +870,44 @@ Write as a journal entry with today's date:
             self.terminal.stop()
             self.terminal = None
 
+    def _start_slack(self) -> None:
+        """Start Slack bot if configured."""
+        if not SLACK_AVAILABLE:
+            return
+
+        import os
+        bot_token = os.environ.get("SLACK_BOT_TOKEN")
+        app_token = os.environ.get("SLACK_APP_TOKEN")
+
+        if not bot_token or not app_token:
+            logger.debug("Slack tokens not configured, skipping Slack bot")
+            return
+
+        try:
+            self.slack_bot = SlackBot(
+                bot_token=bot_token,
+                app_token=app_token,
+                on_message=self._handle_chat,
+            )
+            self.slack_bot.start(blocking=False)
+            logger.info("Slack bot started - DM or @mention me!")
+        except Exception as e:
+            logger.error(f"Failed to start Slack bot: {e}")
+            self.slack_bot = None
+
+    def _stop_slack(self) -> None:
+        """Stop Slack bot."""
+        if self.slack_bot:
+            self.slack_bot.stop()
+            self.slack_bot = None
+            logger.debug("Slack bot stopped")
+
     def _handle_chat(self, message: str) -> str:
         """
-        Handle a chat message from the terminal.
+        Handle a chat message from terminal or Slack.
 
-        Delegates to Claude for a conversational response, with brain context.
+        Delegates to Claude for a conversational response, with full
+        BrainBot context (brain memories, mood, energy, schedule).
         """
         # Check if Claude is available
         if not self.delegator.check_claude_available():

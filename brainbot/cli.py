@@ -175,8 +175,9 @@ def cmd_slack(args: argparse.Namespace) -> int:
     """Run Slack bot integration."""
     try:
         from .integrations.slack_bot import SlackBot, SLACK_AVAILABLE
-    except ImportError:
-        print("Error: slack-bolt not installed. Run: pip install slack-bolt")
+    except ImportError as e:
+        print(f"Error importing slack integration: {e}")
+        print("Try: pip install slack-bolt")
         return 1
 
     if not SLACK_AVAILABLE:
