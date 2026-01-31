@@ -4,11 +4,69 @@ This file contains technical information for developers and maintainers working 
 
 ## Project Overview
 
-BrainBot is a user-friendly, offline-first AI chat assistant built with Python and Textual. It targets Raspberry Pi deployment and prioritizes safety, simplicity, and educational value.
+BrainBot is an autonomous AI agent that "lives" on a Raspberry Pi 5. It has a daily schedule (wakes at 7 AM Central, sleeps at midnight), creates software projects, writes bedtime stories, and interacts with humans through hardware displays.
+
+**Three Modes:**
+1. **Chat UI** (`brain_bot.py`) - Interactive TinyLlama chat for local conversations
+2. **Voice Mode** (`brain_bot.py --voice`) - Wake word + speech-to-text + TTS
+3. **Daemon** (`python -m brainbot`) - Autonomous agent that runs on a schedule
 
 ## Architecture
 
+### Daemon Architecture
+
+```
+~/.brainbot/
+├── config/
+│   ├── config.json          # Main config (timezone, schedule)
+│   ├── hardware.json         # GPIO pin mappings
+│   └── CLAUDE.md            # Self-modifiable personality/rules
+├── brain/                   # Long-term memory (markdown files)
+│   ├── active/              # Current working memories
+│   └── archive/             # Summarized older memories
+├── state/
+│   ├── state.json           # Current state (mood, energy, goals)
+│   ├── memory.db            # SQLite long-term memory
+│   ├── journal/             # Daily markdown journals
+│   └── goals/               # Active and completed goals
+├── projects/                # Creative projects BrainBot builds
+├── bedtime_stories/         # Archive of bedtime stories
+└── logs/                    # Daemon and session logs
+```
+
 ### Core Components
+
+**brainbot/daemon/** - Main daemon
+- `server.py` - PID file, signals, watchdog, main loop
+- `watchdog.py` - Health monitoring thread
+
+**brainbot/schedule/** - Time management
+- `manager.py` - APScheduler-based US Central schedule
+
+**brainbot/state/** - State machine
+- `manager.py` - Thread-safe state with JSON persistence
+- `models.py` - Pydantic models (BotState, Mood, etc.)
+
+**brainbot/memory/** - Persistence
+- `store.py` - SQLite for journals, goals, stories, learnings
+- `brain.py` - Markdown-based long-term memory system
+
+**brainbot/agent/** - Claude Code integration
+- `delegator.py` - Spawns claude CLI for tasks
+- `activities.py` - Activity selection logic
+
+**brainbot/hardware/** - Raspberry Pi hardware
+- `mcp_server.py` - FastMCP tools for LCD, LED, fan
+- `lcd_1inch.py` - SSD1306 OLED driver
+- `lcd_5inch.py` - 5" display driver
+- `led_controller.py` - NeoPixel control
+- `fan_controller.py` - PWM fan control
+
+**brainbot/safety/** - Content safety
+- `content_filter.py` - PG-13 content filtering
+- `limits.py` - Resource limits
+
+### Chat UI Architecture (Existing)
 
 **Frontend: Textual TUI Framework**
 - `brain_bot.py` - Main application with colorful terminal interface
@@ -20,14 +78,126 @@ BrainBot is a user-friendly, offline-first AI chat assistant built with Python a
 - Local inference only - no cloud dependencies
 - Memory optimized for 2GB+ RAM systems
 
-**Safety Layer**
-- Built-in system prompt with safety guardrails
-- No external content filtering (everything local)
-- Appropriate response constraints
+## Daily Schedule (US Central Time)
+
+| Time | Activity |
+|------|----------|
+| 00:00 - 07:00 | Sleep (minimal activity, LEDs dim) |
+| 07:00 | Wake up, morning routine |
+| 07:15 | Review yesterday, plan today's goals |
+| 07:30 - 23:30 | Active period (coding, creating, learning) |
+| 23:30 | Write bedtime story |
+| 23:55 | Evening reflection, save state |
+| 00:00 | Go to sleep |
+
+## Running BrainBot
+
+### Daemon Mode (Autonomous)
+```bash
+# Initialize configuration
+python -m brainbot init
+
+# Start in background
+python -m brainbot start
+
+# Start in foreground (for debugging)
+python -m brainbot start --foreground
+
+# Check status
+python -m brainbot status
+
+# View logs
+python -m brainbot logs -f
+
+# Stop daemon
+python -m brainbot stop
+```
+
+### Chat Mode (Interactive)
+```bash
+python brain_bot.py
+```
+
+### Voice Mode
+```bash
+python brain_bot.py --voice
+```
+
+### Systemd Service (Production)
+```bash
+# Install service
+sudo cp brainbot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable brainbot
+sudo systemctl start brainbot
+```
+
+## Configuration
+
+### Environment Variables
+- `BRAINBOT_DATA_DIR` - Data directory (default: ~/.brainbot)
+- `BRAINBOT_TIMEZONE` - Timezone (default: America/Chicago)
+- `BRAINBOT_LOG_LEVEL` - Log level (default: INFO)
+
+### Config File (~/.brainbot/config/config.json)
+```json
+{
+  "timezone": "America/Chicago",
+  "tick_interval_seconds": 30,
+  "schedule": {
+    "wake_time": "07:00",
+    "sleep_time": "00:00",
+    "bedtime_story_time": "23:30"
+  },
+  "max_session_minutes": 60,
+  "content_rating": "PG-13"
+}
+```
+
+## Hardware MCP Tools
+
+When running on Raspberry Pi with hardware attached:
+
+```python
+# 1-inch OLED display
+lcd_1inch_text(line1="Status", line2="Active")
+
+# 5-inch display
+lcd_5inch_status(title="BrainBot", status="Working", progress=0.5)
+lcd_5inch_story(title="The Adventure", text="Once upon a time...")
+
+# LED mood lighting
+led_mood("excited")  # Patterns: content, excited, focused, tired, curious
+led_set_pattern("breathe", "blue", speed=1.0)
+
+# Fan control
+fan_set_speed(50)  # 0-100%
+fan_auto()  # Temperature-based control
+
+# System health
+get_system_health()  # CPU, memory, disk, temperature
+```
+
+## Content Safety
+
+BrainBot enforces PG-13 content guidelines:
+
+**Allowed Themes:**
+- Adventure, friendship, discovery
+- Learning, nature, science
+- Creativity, problem-solving
+- Teamwork, kindness
+
+**Not Allowed:**
+- Violence or harm
+- Horror/scary content
+- Inappropriate language
+- Mature themes
+- Controversial topics
 
 ## Technical Specifications
 
-### Model Details
+### Model Details (Chat Mode)
 - **Model**: TinyLlama-1.1B-Chat-v1.0
 - **Format**: GGUF (Q4_K_M quantization)
 - **Size**: ~670MB download
@@ -35,10 +205,10 @@ BrainBot is a user-friendly, offline-first AI chat assistant built with Python a
 - **Memory Usage**: ~1.5GB when loaded
 
 ### System Requirements
-- **Python**: 3.8+
+- **Python**: 3.10+
 - **RAM**: 2GB minimum, 4GB recommended
-- **Storage**: 1GB for model + dependencies
-- **CPU**: ARM64 or x86_64 (no GPU required)
+- **Storage**: 2GB for model + projects
+- **CPU**: ARM64 (Raspberry Pi 5) or x86_64
 
 ### Key Dependencies
 
@@ -58,6 +228,14 @@ pyaudio==0.2.14         # Audio input/output
 python-dotenv==1.0.0    # Environment configuration
 ```
 
+**Daemon Mode** (additional):
+```
+pydantic>=2.0.0         # Data validation
+apscheduler>=3.10.0     # Scheduling
+fastmcp>=2.0.0          # MCP server
+psutil>=5.9.0           # System monitoring
+```
+
 **External Tools** (voice mode):
 - whisper.cpp (compiled from source)
 - Piper TTS (binary download)
@@ -70,19 +248,21 @@ python-dotenv==1.0.0    # Environment configuration
 git clone https://github.com/snedea/brainbot.git
 cd brainbot
 
-# Create development environment
+# Create environment
 python3 -m venv venv
 source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run in development mode
+# Run daemon in foreground
+python -m brainbot start -f
+
+# Or run chat UI
 python brain_bot.py
 ```
 
 ### Code Structure
-
 ```
 brainbot/
 ├── brain_bot.py          # Main application (text + voice mode)
@@ -90,7 +270,10 @@ brainbot/
 ├── setup.sh             # Automated setup script (text mode)
 ├── setup_voice.sh       # Voice mode setup script
 ├── launch_voice.sh      # Quick voice mode launcher
+├── run_daemon.sh        # Daemon launcher
+├── brainbot.service     # Systemd service
 ├── .env.example         # Voice configuration template
+│
 ├── voice/               # Voice detection & recording
 │   ├── wake_listener.py # Porcupine wake word detection
 │   └── recorder.py      # VAD-based audio recording
@@ -105,18 +288,20 @@ brainbot/
 ├── config/              # Voice configuration
 │   ├── voice_config.py  # Configuration dataclass
 │   └── env_loader.py    # .env file loader
-├── scripts/
-│   ├── audio_check.py   # Audio device testing utility
-│   ├── install.sh       # Advanced installation tools
-│   └── brainbot.service # Systemd service definition
-└── docs/
-    ├── SETUP_PI.md        # Raspberry Pi specific guide
-    ├── TROUBLESHOOTING.md # Common issues
-    ├── VOICE_MODE.md      # Voice mode comprehensive guide
-    ├── LAUNCH_GUIDE.md    # Voice quick start
-    ├── DEPENDENCIES.md    # Voice dependencies reference
-    ├── PREFLIGHT_CHECK.md # Voice setup checklist
-    └── VOICE_SAMPLES.md   # Available voice models
+│
+└── brainbot/            # Daemon package
+    ├── __init__.py
+    ├── __main__.py      # Entry: python -m brainbot
+    ├── cli.py           # CLI commands
+    ├── daemon/          # Server, watchdog
+    ├── schedule/        # Time management
+    ├── state/           # State machine
+    ├── memory/          # SQLite + brain persistence
+    ├── agent/           # Claude Code delegation
+    ├── hardware/        # Pi hardware control
+    ├── safety/          # Content filtering
+    ├── interaction/     # Terminal UI
+    └── config/          # Settings, defaults
 ```
 
 ## Key Design Decisions
@@ -198,142 +383,6 @@ You never say anything scary, mean, or inappropriate. Keep responses concise and
                     └──────────────┘
 ```
 
-#### State Machine Flow
-
-```
-     ┌────────────────────────────────────┐
-     │          IDLE                      │
-     │  • Wake word listener active       │
-     │  • Waiting for "Computer"          │
-     └───────────────┬────────────────────┘
-                     │ wake word detected
-                     ▼
-     ┌────────────────────────────────────┐
-     │        LISTENING                   │
-     │  • Recording audio                 │
-     │  • VAD-based silence detection     │
-     └───────────────┬────────────────────┘
-                     │ silence detected
-                     ▼
-     ┌────────────────────────────────────┐
-     │      TRANSCRIBING                  │
-     │  • Converting speech to text       │
-     │  • whisper.cpp processing          │
-     └───────────────┬────────────────────┘
-                     │ text ready
-                     ▼
-     ┌────────────────────────────────────┐
-     │        THINKING                    │
-     │  • LLM generating response         │
-     │  • TinyLlama inference             │
-     └───────────────┬────────────────────┘
-                     │ response ready
-                     ▼
-     ┌────────────────────────────────────┐
-     │        SPEAKING                    │
-     │  • Synthesizing speech             │
-     │  • Playing audio output            │
-     └───────────────┬────────────────────┘
-                     │ playback complete
-                     ▼
-            [Return to IDLE]
-```
-
-#### Component Details
-
-**1. Wake Word Detection** (`voice/wake_listener.py`)
-- **Technology**: Porcupine by Picovoice
-- **Always Listening**: Runs continuously with minimal CPU usage
-- **Keyword**: "Computer" (default), customizable to 10+ built-in keywords
-- **Latency**: <100ms detection time
-- **Privacy**: Processing happens locally, API key only for SDK activation
-
-**2. Audio Recording** (`voice/recorder.py`)
-- **Technology**: PyAudio for ALSA integration
-- **VAD**: Amplitude-based silence detection using `audioop.rms()`
-- **Smart Stop**: Automatically stops after 2 seconds of silence
-- **Format**: 16kHz, 16-bit PCM, mono
-- **Max Duration**: 30 seconds (configurable)
-
-**3. Speech-to-Text** (`stt/whisper_cli.py`)
-- **Technology**: whisper.cpp (C++ implementation)
-- **Model**: base.en (150MB, English-optimized)
-- **Performance**: 2-4 seconds for 5 seconds of audio on Pi 4
-- **Why whisper.cpp**: 5-10x faster than Python Whisper on CPU
-- **Process**: Subprocess call to compiled binary
-
-**4. LLM Integration** (`llm/llama_local.py`)
-- **Model**: TinyLlama 1.1B Q4_K_M (shared with text mode)
-- **Voice Prompt**: Optimized for concise spoken responses
-- **Context**: Uses conversation history when available
-- **Performance**: 3-5 seconds for 30-token response
-
-**5. Text-to-Speech** (`tts/piper_cli.py`)
-- **Technology**: Piper TTS by Rhasspy
-- **Voice**: en_US-lessac-medium (60MB)
-- **Quality**: Natural-sounding neural TTS
-- **Performance**: 1-2 seconds synthesis time
-- **Playback**: Pipes to ALSA's `aplay` utility
-
-**6. Voice Agent** (`agent/voice_agent.py`)
-- **Design**: State machine running as daemon thread
-- **Callbacks**: Integrates with Textual TUI via VoiceHooks
-- **Error Handling**: Transitions to ERROR state, recovers automatically
-- **Lifecycle**: Starts with app, stops cleanly on exit
-
-#### Integration with Main Application
-
-The voice mode integrates into `brain_bot.py` through:
-
-```python
-# Command line flag
-python brain_bot.py --voice
-
-# Voice agent initialization
-voice_agent = VoiceAgent(
-    config=config,
-    on_state_change=hooks.on_state_change,
-    on_transcript=hooks.on_transcript,
-    on_response=hooks.on_response
-)
-
-# Background operation
-voice_agent.start()  # Non-blocking
-
-# UI integration
-class VoiceHooks:
-    """Bridge between voice agent and Textual UI"""
-    def on_state_change(state):
-        # Update status display
-    def on_transcript(text):
-        # Add to chat log
-    def on_response(text):
-        # Display and speak
-```
-
-#### Configuration System
-
-Voice mode uses environment-based configuration (`.env`):
-
-```bash
-# Wake word
-PORCUPINE_ACCESS_KEY=your_key_here
-PORCUPINE_KEYWORD=computer
-
-# Model paths
-WHISPER_BIN=/home/brainbot/homelab/whisper.cpp/build/bin/main
-WHISPER_MODEL=/home/brainbot/homelab/whisper.cpp/models/ggml-base.en.bin
-PIPER_BIN=/home/brainbot/piper/piper
-PIPER_VOICE=/home/brainbot/piper/en_US-lessac-medium.onnx
-
-# Performance tuning
-LLAMA_THREADS=4
-SILENCE_THRESHOLD=500
-SILENCE_DURATION_SEC=2.0
-```
-
-Configuration is loaded via `config/env_loader.py` and validated through `config/voice_config.py` dataclass.
-
 #### Performance Benchmarks
 
 **Raspberry Pi 4 (4GB RAM)**:
@@ -347,113 +396,26 @@ Configuration is loaded via `config/env_loader.py` and validated through `config
 | Text-to-speech | 1-2s | Per sentence |
 | **End-to-end** | **7-11s** | Complete interaction |
 
-**Memory Usage**:
-- Base BrainBot: ~100MB
-- TinyLlama loaded: +1.5GB
-- Porcupine: +10MB
-- Audio buffers: +50MB
-- Whisper (during STT): +300MB (temporary)
-- **Total**: ~2GB active, 4GB recommended
-
-#### Why This Architecture?
-
-**PyAudio over pvrecorder**:
-- More widely supported on Raspberry Pi
-- Direct ALSA integration
-- Handles both recording and playback
-
-**Amplitude VAD over WebRTC VAD**:
-- No compilation required
-- Simpler implementation
-- Lower latency
-- Fewer dependencies
-- Sufficient for quiet home environments
-
-**whisper.cpp over OpenAI Whisper (Python)**:
-- 5-10x faster on CPU
-- Lower memory footprint
-- Optimized for edge devices
-- Better for real-time use
-
-**Piper over festival/espeak**:
-- Superior voice quality
-- Neural TTS model
-- Easy voice model swapping
-- Faster than cloud APIs
-
-**External binaries over Python packages**:
-- Better performance on constrained hardware
-- Lower memory usage
-- Easier to optimize per-platform
-- Simpler dependency management
-
-#### Testing Voice Mode
-
-```bash
-# Test audio devices
-python brain_bot.py --test-audio
-
-# Test individual components
-python -c "from voice.wake_listener import WakeWordListener; ..."
-
-# Full integration test
-python brain_bot.py --voice
-# Say "Computer"
-# Say "What is two plus two?"
-# Verify response
-```
-
-## Platform-Specific Optimizations
-
-### Raspberry Pi 4
-- **Memory Management**: Configured for 2GB models
-- **CPU Threading**: Optimized for 4-core ARM Cortex-A72
-- **Storage**: Model cached to ~/.cache/brainbot
-- **Service Integration**: Systemd service for background operation
-
-### macOS/Linux/Windows
-- **Cross-platform compatibility** via Python
-- **Virtual environment isolation**
-- **Automatic platform detection** in setup.sh
-
-## Performance Tuning
-
-### Model Parameters
-```python
-# Configurable in brain_bot.py
-Llama(
-    model_path=str(self.model_path),
-    n_ctx=2048,        # Context window - reduce for less RAM usage
-    n_threads=4,       # CPU threads - match your core count
-    n_gpu_layers=0,    # CPU only for compatibility
-    temperature=0.7,   # Creativity vs consistency
-    verbose=False      # Quiet mode
-)
-```
-
-### Memory Optimization
-- **Swap configuration** recommended for Pi deployments
-- **Model quantization** reduces memory footprint by 70%
-- **Async processing** prevents UI blocking
-
-## Security Considerations
-
-### Input Validation
-- No arbitrary code execution
-- Text-only interface limits attack surface
-- Local processing only
-
-### Model Safety
-- Pre-configured safety prompt
-- No internet access after initial download
-- User-controlled environment
-
-### File System Security
-- Models cached in user directory only
-- No system-level file access required
-- Sandboxed execution environment
-
 ## Testing
+
+### Daemon Tests
+```bash
+# Start daemon, verify PID file
+python -m brainbot start
+cat ~/.brainbot/brainbot.pid
+
+# Check status
+python -m brainbot status --json
+
+# Stop gracefully
+python -m brainbot stop
+```
+
+### Hardware Tests (on Pi)
+```bash
+# Test MCP server
+python -m brainbot.hardware.mcp_server
+```
 
 ### Manual Testing Checklist
 
@@ -479,119 +441,32 @@ Llama(
 - [ ] Graceful fallback if voice fails
 - [ ] Clean shutdown stops all threads
 
-### Platform Testing
-- [ ] Raspberry Pi 4 (2GB/4GB/8GB models)
-- [ ] Ubuntu 20.04+
-- [ ] macOS 11+
-- [ ] Windows 10/11 (WSL for voice mode)
-
-## Deployment
-
-### Raspberry Pi Production
-1. Use setup.sh for automated installation
-2. Configure systemd service for auto-start
-3. Optimize memory settings for hardware
-4. Set up desktop shortcuts for easy access
-
-### Container Deployment (Future)
-- Docker support could be added
-- Would simplify cross-platform deployment
-- Consider resource constraints for Pi deployment
-
-## Contributing Guidelines
-
-### Code Style
-- Follow PEP 8 Python style guide
-- Use type hints where appropriate
-- Include docstrings for all functions
-- Add inline comments for complex logic
-
-### Pull Request Process
-1. Fork the repository
-2. Create feature branch
-3. Test on Raspberry Pi if possible
-4. Update documentation as needed
-5. Submit PR with clear description
-
-### Issue Reporting
-- Include system information (OS, Python version, hardware)
-- Provide full error messages
-- Steps to reproduce
-- Expected vs actual behavior
-
-## Future Enhancements
-
-### Completed Features ✅
-- ~~**Voice Interface**~~: Speech-to-text and text-to-speech - **DONE in v2.0!**
-  - Wake word detection with Porcupine
-  - whisper.cpp STT
-  - Piper TTS
-  - Full offline operation
-
-### Planned Features
-- **Web UI Option**: Browser-based interface for touch devices
-- **Model Options**: Support for different model sizes (7B, 13B variants)
-- **Learning Analytics**: Track topics explored
-- **Usage Controls**: Time limits, content filtering
-- **Multi-language Voice**: Additional language models for voice mode
-- **Custom Wake Words**: Easy training and integration of custom wake phrases
-- **Voice Activity Visualization**: Real-time waveform display during recording
-- **Conversation Persistence**: Save and resume voice conversations
-
-### Technical Debt
-- Better error handling for model download failures
-- Improved chat history management
-- Automated testing suite
-- Performance monitoring
-- Voice mode integration testing
-- Documentation for custom voice model training
+**Daemon Mode**:
+- [ ] Daemon starts with `python -m brainbot start`
+- [ ] PID file created at ~/.brainbot/brainbot.pid
+- [ ] Status command shows current state
+- [ ] Logs command tails log file
+- [ ] Terminal interface responds to commands
+- [ ] Claude Code delegation works
+- [ ] Scheduled activities trigger on time
+- [ ] Graceful shutdown with `python -m brainbot stop`
 
 ## Troubleshooting
 
-### Common Development Issues
+### Daemon Issues
+- Check logs: `python -m brainbot logs -n 100`
+- Verify PID: `cat ~/.brainbot/brainbot.pid`
+- Check process: `ps aux | grep brainbot`
 
-**Import Errors**
-- Ensure virtual environment is activated
-- Check Python version compatibility
-- Verify all dependencies installed
+### Hardware Issues
+- Verify I2C enabled: `sudo raspi-config`
+- Check connections: `i2cdetect -y 1`
+- GPIO permissions: Add user to gpio group
 
-**Model Download Failures**
-- Check internet connection
-- Clear model cache and retry
-- Manual download fallback implemented
-
-**Performance Issues**
-- Monitor memory usage with htop
-- Adjust model parameters for hardware
-- Check CPU temperature on Pi
-
-### Debugging Tools
-
-**Enable Verbose Logging**
-```python
-# In brain_bot.py, change:
-verbose=False
-# to:
-verbose=True
-```
-
-**Monitor Resources**
-```bash
-# Memory usage
-free -h
-
-# CPU usage
-htop
-
-# Disk space
-df -h
-```
-
-## License and Attribution
+## License
 
 - **License**: MIT License
 - **Model**: TinyLlama (Apache 2.0)
-- **Dependencies**: Various open-source licenses
-- **Framework**: Textual (MIT)
+- **Framework**: Textual (MIT), FastMCP
 
-This project demonstrates how modern AI can be made accessible, safe, and educational while maintaining complete privacy and user control.
+This project demonstrates autonomous AI agents running on edge hardware.

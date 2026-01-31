@@ -1,0 +1,44 @@
+[Unit]
+Description=BrainBot Autonomous Agent
+Documentation=https://github.com/snedea/brainbot
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+
+# Working directory
+WorkingDirectory=/home/pi/brainbot
+
+# Environment
+Environment="TZ=America/Chicago"
+Environment="HOME=/home/pi"
+Environment="PATH=/home/pi/.local/bin:/usr/local/bin:/usr/bin:/bin"
+
+# Virtual environment activation
+ExecStart=/home/pi/brainbot/venv/bin/python -m brainbot start --foreground
+
+# Restart policy
+Restart=on-failure
+RestartSec=30
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/pi/.brainbot /home/pi/brainbot/projects
+
+# Resource limits
+MemoryMax=2G
+CPUQuota=80%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=brainbot
+
+[Install]
+WantedBy=multi-user.target
