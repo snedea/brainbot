@@ -205,7 +205,8 @@ class TerminalInterface:
                         self.add_to_history("brainbot", response)
 
                 if response:
-                    print(f"\n{response}")
+                    # Cyan color for BrainBot responses
+                    print(f"\n\033[36m{response}\033[0m")
 
             except EOFError:
                 break
