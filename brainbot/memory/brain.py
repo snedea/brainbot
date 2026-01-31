@@ -438,7 +438,7 @@ with a descriptive name like `{today}_first-awakening.md`.
 """
 
         filepath.write_text(full_content)
-        logger.info(f"Created memory: {filename}")
+        logger.debug(f"Created memory: {filename}")
         return filepath
 
     def update_memory(self, filename: str, content: str) -> Optional[Path]:

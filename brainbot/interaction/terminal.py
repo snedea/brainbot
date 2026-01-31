@@ -177,7 +177,7 @@ class TerminalInterface:
             return
 
         self._last_auto_save = now
-        logger.info("Auto-saving significant conversation...")
+        logger.debug("Auto-saving significant conversation...")
 
         try:
             # Pass a copy so we don't affect ongoing conversation

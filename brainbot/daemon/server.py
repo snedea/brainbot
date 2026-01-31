@@ -958,7 +958,7 @@ Write a concise summary:"""
                 content=memory_content,
                 category="conversation",
             )
-            logger.info("Conversation saved to brain memory")
+            logger.debug("Conversation saved to brain memory")
         else:
             # Fallback: save raw conversation without summary
             raw_content = "## Conversation Log\n\n"
@@ -971,7 +971,7 @@ Write a concise summary:"""
                 content=raw_content,
                 category="conversation",
             )
-            logger.info("Conversation saved (raw, no summary)")
+            logger.debug("Conversation saved (raw, no summary)")
 
     def status(self) -> dict:
         """Get daemon status."""
