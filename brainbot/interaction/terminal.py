@@ -8,6 +8,27 @@ from datetime import datetime
 from typing import Callable, Optional, TYPE_CHECKING
 from enum import Enum
 
+# Rainbow colors for BrainBot name
+RAINBOW_COLORS = [
+    "\033[31m",  # Red
+    "\033[33m",  # Yellow
+    "\033[32m",  # Green
+    "\033[36m",  # Cyan
+    "\033[34m",  # Blue
+    "\033[35m",  # Magenta
+]
+RESET = "\033[0m"
+
+
+def rainbow_text(text: str) -> str:
+    """Apply rainbow colors to text."""
+    result = []
+    for i, char in enumerate(text):
+        color = RAINBOW_COLORS[i % len(RAINBOW_COLORS)]
+        result.append(f"{color}{char}")
+    result.append(RESET)
+    return "".join(result)
+
 if TYPE_CHECKING:
     from ..state.manager import StateManager
     from ..memory.store import MemoryStore
@@ -218,7 +239,7 @@ class TerminalInterface:
     def _print_welcome(self) -> None:
         """Print welcome message."""
         print("\n" + "=" * 50)
-        print("  BrainBot Terminal Interface")
+        print(f"  🧠 {rainbow_text('BrainBot')} Terminal Interface")
         print("=" * 50)
         print("\nCommands:")
         print("  /status    - Show BrainBot's current status")
@@ -322,8 +343,9 @@ Brain Memory:
   Archived: {stats['archived_memories']} ({stats['archived_size_kb']:.1f} KB)
   Total:    {stats['total_memories']} memories"""
 
+        brainbot_header = f"🧠 {rainbow_text('BrainBot')} Status at {now}"
         return f"""
-BrainBot Status at {now}
+{brainbot_header}
 ========================
 Status:  {state.status.value}
 Mood:    {state.mood.value}
