@@ -61,6 +61,11 @@ Pillow>=10.0.0
 # spidev
 
 
+# ============ Integrations ============
+
+# Slack bot
+slack-bolt>=1.18.0
+
 # ============ Future Dependencies ============
 # Uncomment when implementing these features:
 

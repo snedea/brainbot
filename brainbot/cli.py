@@ -171,6 +171,55 @@ def cmd_logs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_slack(args: argparse.Namespace) -> int:
+    """Run Slack bot integration."""
+    try:
+        from .integrations.slack_bot import SlackBot, SLACK_AVAILABLE
+    except ImportError:
+        print("Error: slack-bolt not installed. Run: pip install slack-bolt")
+        return 1
+
+    if not SLACK_AVAILABLE:
+        print("Error: slack-bolt not installed. Run: pip install slack-bolt")
+        return 1
+
+    import os
+    if not os.environ.get("SLACK_BOT_TOKEN"):
+        print("Error: SLACK_BOT_TOKEN environment variable not set")
+        print("  export SLACK_BOT_TOKEN=xoxb-...")
+        return 1
+    if not os.environ.get("SLACK_APP_TOKEN"):
+        print("Error: SLACK_APP_TOKEN environment variable not set")
+        print("  export SLACK_APP_TOKEN=xapp-...")
+        return 1
+
+    config_path = Path(args.config) if args.config else None
+    settings = Settings.load(config_path)
+
+    from .agent.delegator import ClaudeDelegator
+
+    delegator = ClaudeDelegator(settings)
+
+    def handle_chat(message: str) -> str:
+        """Handle chat message via Claude."""
+        result = delegator.delegate_for_chat(message)
+        return result.output if result.success else f"Error: {result.error}"
+
+    print("Starting BrainBot Slack integration...")
+    print("Send me a DM or @mention me in a channel!")
+    print("Press Ctrl+C to stop")
+
+    bot = SlackBot(on_message=handle_chat)
+
+    try:
+        bot.start(blocking=True)
+    except KeyboardInterrupt:
+        print("\nStopping...")
+        bot.stop()
+
+    return 0
+
+
 def main(argv: Optional[list] = None) -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -245,6 +294,10 @@ def main(argv: Optional[list] = None) -> int:
         help="Number of lines to show",
     )
     logs_parser.set_defaults(func=cmd_logs)
+
+    # slack
+    slack_parser = subparsers.add_parser("slack", help="Run Slack bot integration")
+    slack_parser.set_defaults(func=cmd_slack)
 
     args = parser.parse_args(argv)
 
