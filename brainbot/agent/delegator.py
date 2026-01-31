@@ -1,6 +1,5 @@
 """BrainBot Claude Code delegator for autonomous tasks."""
 
-import json
 import logging
 import os
 import subprocess
@@ -96,8 +95,9 @@ class ClaudeDelegator:
         if additional_context:
             full_task = f"{additional_context}\n\n{task}"
 
-        # Build command - use subscription's default model
-        cmd = ["claude", "--print", full_task]
+        # Build command
+        # --dangerously-skip-permissions allows unattended daemon operation
+        cmd = ["claude", "--print", "--dangerously-skip-permissions", full_task]
 
         logger.info(f"Delegating task to Claude: {task[:100]}...")
         start_time = time.time()
@@ -304,47 +304,58 @@ Format as a journal entry with today's date."""
         self,
         message: str,
         personality_context: Optional[str] = None,
+        context_update: Optional[str] = None,
         conversation_history: Optional[list[dict]] = None,
     ) -> DelegationResult:
         """
         Delegate a conversational chat message to Claude.
 
-        This is the core method for BrainBot's conversational abilities.
+        Each call is independent but includes conversation history for continuity.
+        The personality prompt is small (~100 tokens) so we include it every time
+        for reliability.
 
         Args:
             message: The user's message
-            personality_context: BrainBot's current personality/state context
+            personality_context: BrainBot's personality (static)
+            context_update: Dynamic state (mood, energy, recent memory)
             conversation_history: Recent conversation for context
 
         Returns:
             DelegationResult with the response
         """
-        # Build conversation context with standardized role names
-        history_str = ""
-        if conversation_history:
-            for msg in conversation_history[-5:]:  # Last 5 messages
-                role = msg.get("role", "human")
-                # Normalize role names for Claude
-                if role in ("human", "user"):
-                    role = "Human"
-                elif role in ("brainbot", "assistant"):
-                    role = "Assistant"
-                content = msg.get("content", "")
-                history_str += f"{role}: {content}\n"
-
         personality = personality_context or """You are BrainBot, a friendly AI assistant that lives on a Raspberry Pi.
 You have a warm, curious personality. You love learning new things, creating projects,
 and writing bedtime stories. Keep responses concise but engaging.
 You should be appropriate for all ages (PG-13 content only)."""
 
-        prompt = f"""{personality}
+        # Build conversation history string
+        history_str = ""
+        if conversation_history:
+            for msg in conversation_history[-10:]:  # Last 10 messages for context
+                role = msg.get("role", "human")
+                if role in ("human", "user"):
+                    role = "Human"
+                elif role in ("brainbot", "assistant"):
+                    role = "BrainBot"
+                content = msg.get("content", "")
+                history_str += f"{role}: {content}\n"
 
-{f"Recent conversation:{chr(10)}{history_str}{chr(10)}" if history_str else ""}Human: {message}
+        # Build the full prompt
+        prompt_parts = [personality]
 
-Respond naturally as BrainBot. Keep your response concise (2-4 sentences unless the question requires more detail)."""
+        if context_update:
+            prompt_parts.append(f"\n## Current State\n{context_update.strip()}")
+
+        if history_str:
+            prompt_parts.append(f"\n## Recent Conversation\n{history_str}")
+
+        prompt_parts.append(f"\nHuman: {message}")
+        prompt_parts.append("\nRespond naturally as BrainBot. Keep your response concise (2-4 sentences unless more detail is needed).")
+
+        full_prompt = "\n".join(prompt_parts)
 
         return self.delegate(
-            task=prompt,
+            task=full_prompt,
             timeout_minutes=2,
         )
 
@@ -360,3 +371,4 @@ Respond naturally as BrainBot. Keep your response concise (2-4 sentences unless 
             return result.returncode == 0
         except Exception:
             return False
+

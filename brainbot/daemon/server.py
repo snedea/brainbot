@@ -839,6 +839,7 @@ Write as a journal entry with today's date:
             brain=self.brain,
             schedule_manager=self.schedule_manager,
             on_chat=self._handle_chat,
+            on_session_end=self._save_conversation,
         )
         self.terminal.start()
         logger.info("Terminal interface started")
@@ -868,22 +869,21 @@ Write as a journal entry with today's date:
             content = self.brain.read_memory(recent, max_lines=20)
             recent_memory = f"\n\nMy most recent memory ({recent.name}):\n{content[:500]}..."
 
-        # Build personality context from current state
+        # Build personality system prompt (static) and dynamic context
         state = self.state_manager.get_state()
-        personality = f"""You are BrainBot, a friendly AI assistant that lives on a Raspberry Pi.
+        personality = """You are BrainBot, a friendly AI assistant that lives on a Raspberry Pi.
 You have a warm, curious personality. You love learning new things, creating projects,
 and writing bedtime stories. You maintain memories in markdown files.
+Keep responses concise but engaging. Be appropriate for all ages (PG-13 content only).
+You can reference your memories and what you've been working on."""
 
-Current state:
+        context_update = f"""Current state:
 - Mood: {state.mood.value}
 - Energy: {state.energy:.0%}
 - Current activity: {state.current_activity or 'chatting with a human'}
 - Status: {state.status.value}
 - Active memories: {len(memories)} files
-{recent_memory}
-
-Keep responses concise but engaging. Be appropriate for all ages (PG-13 content only).
-You can reference your memories and what you've been working on."""
+{recent_memory}"""
 
         # Get conversation history from terminal
         history = self.terminal.get_conversation_history() if self.terminal else []
@@ -893,6 +893,7 @@ You can reference your memories and what you've been working on."""
         result = self.delegator.delegate_for_chat(
             message=message,
             personality_context=personality,
+            context_update=context_update,
             conversation_history=history,
         )
 
@@ -903,6 +904,71 @@ You can reference your memories and what you've been working on."""
         else:
             logger.warning(f"Chat delegation failed: {result.error}")
             return "Hmm, I'm having trouble thinking right now. Try again in a moment?"
+
+    def _save_conversation(self, history: list[dict]) -> None:
+        """
+        Save a conversation to brain memory.
+
+        Called on session end or when significant topics detected.
+        Summarizes the conversation and saves as a memory file.
+        """
+        if not history or len(history) < 2:
+            return
+
+        # Format conversation for summarization
+        convo_text = ""
+        for msg in history:
+            role = "Human" if msg.get("role") in ("human", "user") else "BrainBot"
+            convo_text += f"{role}: {msg.get('content', '')}\n"
+
+        # Ask Claude to summarize
+        prompt = f"""Summarize this conversation briefly (2-4 sentences).
+Focus on: key topics discussed, any decisions made, things to remember, or follow-up items.
+
+Conversation:
+{convo_text}
+
+Write a concise summary:"""
+
+        result = self.delegator.delegate(task=prompt, timeout_minutes=2)
+
+        if result.success and result.output.strip():
+            summary = result.output.strip()
+
+            # Create memory with both summary and key excerpts
+            memory_content = f"""## Conversation Summary
+
+{summary}
+
+## Key Exchanges
+
+"""
+            # Include last few meaningful exchanges
+            for msg in history[-6:]:
+                role = "Human" if msg.get("role") in ("human", "user") else "BrainBot"
+                content = msg.get("content", "")[:200]
+                memory_content += f"**{role}:** {content}\n\n"
+
+            # Save to brain
+            self.brain.create_memory(
+                title="Conversation",
+                content=memory_content,
+                category="conversation",
+            )
+            logger.info("Conversation saved to brain memory")
+        else:
+            # Fallback: save raw conversation without summary
+            raw_content = "## Conversation Log\n\n"
+            for msg in history[-10:]:
+                role = "Human" if msg.get("role") in ("human", "user") else "BrainBot"
+                raw_content += f"**{role}:** {msg.get('content', '')}\n\n"
+
+            self.brain.create_memory(
+                title="Conversation",
+                content=raw_content,
+                category="conversation",
+            )
+            logger.info("Conversation saved (raw, no summary)")
 
     def status(self) -> dict:
         """Get daemon status."""

@@ -43,6 +43,7 @@ class TerminalInterface:
         schedule_manager: Optional["ScheduleManager"] = None,
         on_command: Optional[Callable[[str], str]] = None,
         on_chat: Optional[Callable[[str], str]] = None,
+        on_session_end: Optional[Callable[[list[dict]], None]] = None,
     ):
         """
         Initialize terminal interface.
@@ -54,6 +55,7 @@ class TerminalInterface:
             schedule_manager: Schedule manager for phase info
             on_command: Callback for processing commands
             on_chat: Callback for processing chat messages
+            on_session_end: Callback when session ends, receives conversation history
         """
         self.state_manager = state_manager
         self.memory_store = memory_store
@@ -61,10 +63,13 @@ class TerminalInterface:
         self.schedule_manager = schedule_manager
         self.on_command = on_command
         self.on_chat = on_chat
+        self.on_session_end = on_session_end
 
         self._running = False
         self._input_thread: Optional[threading.Thread] = None
         self._conversation_history: list[dict] = []
+        self._total_message_count = 0  # Track total for checkpoints (not capped)
+        self._session_saved = False  # Prevent double-saving
 
     def start(self) -> None:
         """Start the terminal interface."""
@@ -82,7 +87,23 @@ class TerminalInterface:
     def stop(self) -> None:
         """Stop the terminal interface."""
         self._running = False
+
+        # Save conversation if we had meaningful exchanges (and not already saved)
+        if self.on_session_end and len(self._conversation_history) >= 2 and not self._session_saved:
+            try:
+                self._session_saved = True
+                self.on_session_end(self._conversation_history)
+            except Exception as e:
+                logger.error(f"Failed to save session: {e}")
+
         logger.info("Terminal interface stopped")
+
+    # Keywords that indicate a conversation worth saving
+    SIGNIFICANT_KEYWORDS = [
+        "remember", "important", "idea", "project", "plan", "goal",
+        "learn", "discovered", "realized", "decided", "promise",
+        "tomorrow", "next time", "don't forget", "save this",
+    ]
 
     def add_to_history(self, role: str, content: str) -> None:
         """Add a message to conversation history."""
@@ -91,13 +112,71 @@ class TerminalInterface:
             "content": content,
             "timestamp": datetime.now().isoformat(),
         })
-        # Keep last 20 messages
+        self._total_message_count += 1
+
+        # Auto-save check: significant conversation detected
+        if self._should_auto_save(content):
+            self._trigger_auto_save()
+
+        # Keep last 20 messages in memory (but total count continues)
         if len(self._conversation_history) > 20:
             self._conversation_history = self._conversation_history[-20:]
+
+    def _should_auto_save(self, latest_content: str) -> bool:
+        """Check if conversation should be auto-saved."""
+        # Need at least 6 messages for a meaningful conversation
+        if len(self._conversation_history) < 6:
+            return False
+
+        # Check for significant keywords in recent messages
+        recent = self._conversation_history[-4:]
+        all_text = " ".join(m["content"].lower() for m in recent)
+
+        for keyword in self.SIGNIFICANT_KEYWORDS:
+            if keyword in all_text:
+                return True
+
+        # Also save every 10 messages as a checkpoint (uses total, not capped history)
+        if self._total_message_count > 0 and self._total_message_count % 10 == 0:
+            return True
+
+        return False
+
+    def _trigger_auto_save(self) -> None:
+        """Trigger auto-save of conversation."""
+        if not self.on_session_end:
+            return
+
+        # Don't save too frequently - check last save time
+        if not hasattr(self, "_last_auto_save"):
+            self._last_auto_save = 0
+
+        now = time.time()
+        if now - self._last_auto_save < 300:  # 5 minute cooldown
+            return
+
+        self._last_auto_save = now
+        logger.info("Auto-saving significant conversation...")
+
+        try:
+            # Pass a copy so we don't affect ongoing conversation
+            self.on_session_end(list(self._conversation_history))
+        except Exception as e:
+            logger.error(f"Auto-save failed: {e}")
 
     def get_conversation_history(self) -> list[dict]:
         """Get recent conversation history."""
         return self._conversation_history[-10:]
+
+    def _save_on_exit(self) -> None:
+        """Save conversation when user types quit/exit."""
+        if self.on_session_end and len(self._conversation_history) >= 2 and not self._session_saved:
+            logger.info("Saving conversation on exit...")
+            try:
+                self._session_saved = True
+                self.on_session_end(list(self._conversation_history))
+            except Exception as e:
+                logger.error(f"Failed to save on exit: {e}")
 
     def _input_loop(self) -> None:
         """Main input loop."""
@@ -112,6 +191,7 @@ class TerminalInterface:
 
                 if user_input.lower() in ("quit", "exit", "q"):
                     print("Goodbye!")
+                    self._save_on_exit()
                     break
 
                 if user_input.startswith("/"):
