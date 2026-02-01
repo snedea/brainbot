@@ -89,6 +89,39 @@ DEVICE_KEYWORDS = {
     ],
 }
 
+# Action verbs that indicate a command (not just a mention)
+# Only route to capability nodes when these action patterns are present
+# Note: Avoid words that are both nouns and verbs (like "display", "light")
+ACTION_PATTERNS = [
+    # Imperatives / commands (clear verbs only)
+    r"\b(turn|switch|set|make|get|show|take|capture|snap|record)\b",
+    r"\b(start|stop|enable|disable|activate|deactivate)\b",
+    r"\b(play|pause|say|speak|read aloud|announce)\b",
+    r"\b(check|measure|sense|detect|monitor)\b",
+    # "display" as a verb (followed by object)
+    r"\bdisplay\s+(this|the|a|my|some|that)\b",
+    # Requests
+    r"\b(can you|could you|please|would you)\b.*\b(turn|show|take|play|set)\b",
+    r"\b(i want|i need|i'd like)\b.*\b(to see|to hear|a photo|a picture)\b",
+    # Questions that imply action
+    r"\bwhat('s| is) the (temperature|status|reading)\b",
+    r"\bhow (hot|cold|bright|loud)\b",
+]
+
+# Phrases that indicate conversation ABOUT capabilities, not commands
+CONVERSATIONAL_PATTERNS = [
+    r"\b(has|have|got)\s+(a|an|the)\s+\w*\b",  # "has a camera", "have the display"
+    r"\b(it|that|this|which)\s+is\s+(a|an)\b",  # "it is a Raspberry Pi" (not "what is the")
+    r"\bhow does it feel\b",
+    r"\bwhat do you think\b",
+    r"\btell me about\b",
+    r"\bdo you (like|enjoy|feel)\b",
+    r"\b(feels?|think|believe|wonder)\b.*\b(about|that)\b",
+    r"\b(two|multiple|both|several)\s+(nodes?|bodies|instances)\b",
+    r"\bi love the\b",  # "I love the camera"
+    r"\bthe \w+ is (nice|great|cool|awesome)\b",  # "the display is nice"
+]
+
 
 @dataclass
 class RoutingDecision:
@@ -234,6 +267,25 @@ class MessageRouter:
     def _check_capability_keywords(self, message: str) -> Optional[RoutingDecision]:
         """Check if message requires specific capabilities."""
         message_lower = message.lower()
+
+        # First, check if this is conversational (talking ABOUT capabilities)
+        # rather than a command (asking TO USE capabilities)
+        is_conversational = any(
+            re.search(pattern, message_lower)
+            for pattern in CONVERSATIONAL_PATTERNS
+        )
+
+        # Check for action verbs that indicate a command
+        has_action = any(
+            re.search(pattern, message_lower)
+            for pattern in ACTION_PATTERNS
+        )
+
+        # If it looks conversational and has no clear action verb, don't route
+        if is_conversational and not has_action:
+            logger.debug(f"Message appears conversational, not routing: {message[:50]}...")
+            return None
+
         required_caps = []
 
         for capability, patterns in CAPABILITY_KEYWORDS.items():
@@ -243,6 +295,11 @@ class MessageRouter:
                     break  # Only add each capability once
 
         if not required_caps:
+            return None
+
+        # Even with capability keywords, require action intent for remote routing
+        if not has_action:
+            logger.debug(f"Capability keywords found but no action intent: {message[:50]}...")
             return None
 
         # Check if local node has these capabilities
