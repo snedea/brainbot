@@ -93,27 +93,41 @@ class SlackConfig(BaseModel):
     post_heartbeats: bool = False  # Usually too noisy
 
 
+class MeshConfig(BaseModel):
+    """P2P mesh network configuration."""
+    enabled: bool = False
+    port: int = 7777
+    seed_peers: list[str] = Field(default_factory=list)  # e.g., ["100.96.197.113:7777"]
+    gossip_interval_seconds: int = 30
+    heartbeat_interval_seconds: int = 10
+    sync_interval_seconds: int = 60
+    advertise_address: str = ""  # If empty, auto-detect
+
+
 class NetworkConfig(BaseModel):
     """Network/distributed configuration."""
     enabled: bool = False
 
-    # R2 (primary storage - Cloudflare edge)
+    # P2P Mesh network (primary communication layer)
+    mesh: MeshConfig = Field(default_factory=MeshConfig)
+
+    # R2 (optional backup storage - Cloudflare edge)
     r2_account_id: str = ""
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
     r2_bucket: str = "brainbot-network"
 
-    # S3 (backup storage - cold backup)
+    # S3 (optional backup storage - cold backup)
     s3_bucket: str = "brainbot-backup"
     s3_region: str = "us-east-1"
     s3_access_key_id: str = ""  # If empty, uses R2 credentials
     s3_secret_access_key: str = ""  # If empty, uses R2 credentials
 
-    # Sync intervals
+    # Legacy sync intervals (used if mesh disabled)
     heartbeat_interval_seconds: int = 60
     sync_interval_seconds: int = 300
 
-    # Slack network (real-time layer)
+    # Slack network (real-time layer, optional)
     slack: SlackConfig = Field(default_factory=SlackConfig)
 
     @property
@@ -292,6 +306,9 @@ class Settings(BaseSettings):
                 # Handle nested network config
                 if "network" in config_data and isinstance(config_data["network"], dict):
                     net = config_data["network"]
+                    # Handle nested mesh config within network
+                    if "mesh" in net and isinstance(net["mesh"], dict):
+                        net["mesh"] = MeshConfig(**net["mesh"])
                     # Handle nested slack config within network
                     if "slack" in net and isinstance(net["slack"], dict):
                         net["slack"] = SlackConfig(**net["slack"])

@@ -73,6 +73,14 @@ except ImportError:
     NETWORK_AVAILABLE = False
     SyncDaemon = None
 
+# Optional P2P mesh network
+try:
+    from ..network.mesh import MeshNode
+    MESH_AVAILABLE = True
+except ImportError:
+    MESH_AVAILABLE = False
+    MeshNode = None
+
 # Optional LED controller for expressive lighting
 try:
     from ..hardware.expansion_leds import get_leds, ExpansionLEDs
@@ -242,6 +250,7 @@ class BrainBotDaemon:
 
         # Network/distributed features
         self._sync_daemon: Optional["SyncDaemon"] = None
+        self._mesh_node: Optional["MeshNode"] = None
         self._task_executor: Optional["TaskExecutor"] = None
         self._message_router: Optional["MessageRouter"] = None
         self._node_id: Optional[str] = None
@@ -1363,30 +1372,107 @@ Write as a journal entry with today's date:
     # Network/Distributed Methods
 
     def _start_network(self) -> None:
-        """Start network sync daemon if configured."""
-        if not NETWORK_AVAILABLE:
-            logger.debug("Network features not available")
-            return
-
+        """Start network features (mesh and/or R2-based sync)."""
         if not self.settings.network.enabled:
             logger.debug("Network not enabled in config")
             return
 
         try:
-            # Initialize node identity
-            node_id_mgr = NodeIdManager(self.settings.config_dir)
-            identity = node_id_mgr.get_identity()
-            self._node_id = identity.node_id
+            # Initialize node identity (shared by both mesh and R2)
+            if NETWORK_AVAILABLE:
+                node_id_mgr = NodeIdManager(self.settings.config_dir)
+                identity = node_id_mgr.get_identity()
+                self._node_id = identity.node_id
 
-            # Scan hardware
-            hw_config = self.settings.hardware.model_dump() if self.settings.hardware else {}
-            scanner = HardwareScanner(hw_config)
-            self._manifest = scanner.scan()
+                # Scan hardware
+                hw_config = self.settings.hardware.model_dump() if self.settings.hardware else {}
+                scanner = HardwareScanner(hw_config)
+                self._manifest = scanner.scan()
 
-            # Generate/load persona
-            persona_gen = PersonaGenerator(self.settings.config_dir)
-            self._persona = persona_gen.generate(self._manifest, identity.hostname)
+                # Generate/load persona
+                persona_gen = PersonaGenerator(self.settings.config_dir)
+                self._persona = persona_gen.generate(self._manifest, identity.hostname)
+            else:
+                # Minimal identity without full network module
+                import uuid
+                import socket
+                self._node_id = str(uuid.uuid4())
+                self._manifest = None
+                self._persona = None
 
+            mesh_started = False
+
+            # Start mesh network if enabled (primary P2P communication)
+            mesh_config = self.settings.network.mesh
+            if MESH_AVAILABLE and mesh_config.enabled:
+                self._start_mesh_network()
+                mesh_started = self._mesh_node is not None
+
+            # Start R2 sync as backup if configured (even if mesh is running)
+            # R2 provides cloud backup and works as fallback if mesh fails
+            if NETWORK_AVAILABLE:
+                r2_configured = bool(
+                    self.settings.network.r2_account_id and
+                    self.settings.network.r2_access_key_id and
+                    self.settings.network.r2_secret_access_key
+                )
+                if r2_configured:
+                    self._start_r2_sync()
+                elif not mesh_started:
+                    logger.warning("No network backend available (mesh disabled, R2 not configured)")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize network features: {e}")
+
+    def _start_mesh_network(self) -> None:
+        """Start P2P mesh network."""
+        mesh_config = self.settings.network.mesh
+
+        try:
+            # Get capabilities list
+            capabilities = []
+            if self._manifest:
+                capabilities = [c.value for c in self._manifest.get_available_capabilities()]
+
+            # Create mesh node
+            self._mesh_node = MeshNode(
+                node_id=self._node_id,
+                hostname=self._persona.display_name if self._persona else "",
+                persona_name=self._persona.display_name if self._persona else "",
+                capabilities=capabilities,
+                version=get_version_full(),
+                listen_port=mesh_config.port,
+                advertise_address=mesh_config.advertise_address or "",
+                seed_peers=mesh_config.seed_peers,
+                data_dir=self.settings.data_dir / "mesh",
+                brain_dir=self.settings.brain_dir,
+                gossip_interval=float(mesh_config.gossip_interval_seconds),
+                heartbeat_interval=float(mesh_config.heartbeat_interval_seconds),
+                sync_interval=float(mesh_config.sync_interval_seconds),
+                on_chat=self._handle_mesh_chat,
+                on_task=self._handle_mesh_task,
+            )
+
+            if self._mesh_node.start():
+                status, node_count = self._mesh_node.get_quorum_status()
+                logger.info(
+                    f"Mesh network started as '{self._persona.display_name if self._persona else self._node_id[:8]}' "
+                    f"on port {mesh_config.port} ({status}, {node_count} node(s))"
+                )
+
+                # Start Slack network communication if configured
+                self._start_slack_network()
+            else:
+                logger.warning("Failed to start mesh network")
+                self._mesh_node = None
+
+        except Exception as e:
+            logger.error(f"Failed to start mesh network: {e}")
+            self._mesh_node = None
+
+    def _start_r2_sync(self) -> None:
+        """Start R2-based network sync (backup/fallback layer)."""
+        try:
             # Create storage config
             storage_config = CloudStorageConfig(
                 r2_account_id=self.settings.network.r2_account_id,
@@ -1396,14 +1482,16 @@ Write as a journal entry with today's date:
             )
 
             if not storage_config.is_configured:
-                logger.warning("R2 credentials not configured, network disabled")
+                # Only warn if mesh is not running (R2 is optional backup)
+                if not self._mesh_node:
+                    logger.warning("R2 credentials not configured, no network backend available")
                 return
 
             # Start sync daemon
             self._sync_daemon = SyncDaemon(
                 storage_config=storage_config,
                 node_id=self._node_id,
-                hostname=identity.hostname,
+                hostname=self._persona.display_name if self._persona else "",
                 persona=self._persona,
                 manifest=self._manifest,
                 brain_dir=self.settings.brain_dir,
@@ -1413,39 +1501,67 @@ Write as a journal entry with today's date:
             )
 
             if self._sync_daemon.start():
-                logger.info(f"Network sync daemon started as '{self._persona.display_name}'")
+                role = "backup" if self._mesh_node else "primary"
+                logger.info(f"R2 sync daemon started as {role} ({self._persona.display_name if self._persona else 'unknown'})")
 
-                # Initialize task executor
-                from ..network.storage import StorageClient
-                storage = StorageClient(storage_config)
-                event_log = EventLog(storage, self._node_id)
-                task_queue = TaskQueue(storage, event_log, self._node_id)
-                self._task_executor = TaskExecutor(task_queue, self._manifest)
+                # Initialize task executor (only if not already set by mesh)
+                if self._task_executor is None:
+                    from ..network.storage import StorageClient
+                    storage = StorageClient(storage_config)
+                    event_log = EventLog(storage, self._node_id)
+                    task_queue = TaskQueue(storage, event_log, self._node_id)
+                    self._task_executor = TaskExecutor(task_queue, self._manifest)
 
-                # Initialize message router for smart routing
-                self._message_router = MessageRouter(
-                    registry=self._sync_daemon.registry,
-                    local_node_id=self._node_id,
-                    local_persona_name=self._persona.display_name,
-                )
-                logger.debug("Message router initialized")
+                # Initialize message router for smart routing (only if not already set)
+                if self._message_router is None:
+                    self._message_router = MessageRouter(
+                        registry=self._sync_daemon.registry,
+                        local_node_id=self._node_id,
+                        local_persona_name=self._persona.display_name if self._persona else "",
+                    )
+                    logger.debug("Message router initialized")
 
-                # Start Slack network communication
-                self._start_slack_network()
+                # Start Slack network communication (only if not already started by mesh)
+                if not self._slack_network:
+                    self._start_slack_network()
             else:
-                logger.warning("Failed to start network sync daemon")
+                logger.warning("Failed to start R2 sync daemon")
                 self._sync_daemon = None
 
         except Exception as e:
-            logger.error(f"Failed to initialize network features: {e}")
+            logger.error(f"Failed to start R2 sync: {e}")
             self._sync_daemon = None
 
     def _stop_network(self) -> None:
-        """Stop network sync daemon."""
+        """Stop network features (mesh and/or R2 sync)."""
+        # Stop mesh node
+        if self._mesh_node:
+            self._mesh_node.stop()
+            self._mesh_node = None
+            logger.debug("Mesh network stopped")
+
+        # Stop R2 sync daemon
         if self._sync_daemon:
             self._sync_daemon.stop()
             self._sync_daemon = None
-            logger.debug("Network sync daemon stopped")
+            logger.debug("R2 sync daemon stopped")
+
+    def _handle_mesh_chat(self, message: str, source: str) -> str:
+        """Handle chat message received via mesh network."""
+        logger.info(f"Mesh chat from {source}: {message[:50]}...")
+        return self._handle_chat(message, source=f"mesh-{source}")
+
+    def _handle_mesh_task(self, task_data: dict) -> dict:
+        """Handle task received via mesh network."""
+        task_type = task_data.get("task_type", "unknown")
+        logger.info(f"Mesh task received: {task_type}")
+
+        # For now, just acknowledge - full task execution can be added later
+        return {
+            "status": "received",
+            "task_id": task_data.get("task_id"),
+            "node_id": self._node_id,
+        }
 
     def _on_network_task(self, task_data: dict) -> None:
         """Handle a task received from the network."""
@@ -2065,11 +2181,24 @@ Write a concise summary:"""
 
         # Get network status
         network_status = None
-        if self._slack_network:
+        mesh_status = None
+
+        # Mesh network status (preferred)
+        if self._mesh_node:
+            mesh_status = self._mesh_node.get_status()
+            network_status = {
+                "type": "mesh",
+                "online_nodes": mesh_status["peers"]["active"] + 1,  # Include self
+                "node_names": [p["persona_name"] for p in self._mesh_node.get_peer_info() if p["persona_name"]],
+                "quorum": mesh_status["quorum"],
+            }
+        elif self._slack_network:
             network_status = self._slack_network.get_network_status()
+            network_status["type"] = "slack"
         elif self._sync_daemon and self._sync_daemon.registry:
             nodes = self._sync_daemon.registry.get_online_nodes()
             network_status = {
+                "type": "r2",
                 "online_nodes": len(nodes),
                 "node_names": [n.persona.display_name for n in nodes],
             }
@@ -2103,6 +2232,7 @@ Write a concise summary:"""
                 "stats": autonomous_stats,
             },
             "network": network_status,
+            "mesh": mesh_status,
             "display_loop": {
                 "enabled": self._display_loop is not None,
             },
