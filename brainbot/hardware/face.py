@@ -386,6 +386,7 @@ class FaceAnimator:
 
         # Framebuffer path
         self._fb_path = Path("/dev/fb0")
+        self._fb_warned = False  # Only warn once about framebuffer issues
 
     def start(self) -> None:
         """Start the face animation loop."""
@@ -565,9 +566,17 @@ class FaceAnimator:
                 fb.write(img_bgra.tobytes())
 
         except PermissionError:
-            logger.warning("No permission to write to framebuffer")
+            if not self._fb_warned:
+                logger.warning("No permission to write to framebuffer (will not repeat)")
+                self._fb_warned = True
+        except FileNotFoundError:
+            if not self._fb_warned:
+                logger.warning("Framebuffer not found - not running on Pi? (will not repeat)")
+                self._fb_warned = True
         except Exception as e:
-            logger.debug(f"Framebuffer write failed: {e}")
+            if not self._fb_warned:
+                logger.debug(f"Framebuffer write failed: {e}")
+                self._fb_warned = True
 
 
 # Singleton instance

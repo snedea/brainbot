@@ -1706,6 +1706,11 @@ Write as a journal entry with today's date:
             logger.debug("Face animator not available")
             return
 
+        # Check if 5-inch LCD is enabled in config
+        if not self.settings.hardware.lcd_5inch.enabled:
+            logger.debug("5-inch LCD not enabled in config, skipping face animator")
+            return
+
         try:
             # Create callbacks for dynamic state
             def get_mood():
