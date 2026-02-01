@@ -59,14 +59,8 @@ CAPABILITY_KEYWORDS = {
         r"\bwebcam\b", r"\busb\s*camera\b",
     ],
 
-    # GPIO/Hardware
-    HardwareCapability.GPIO: [
-        r"\bgpio\b", r"\bpin\b", r"\bbutton\b", r"\bsensor\b",
-        r"\brelay\b", r"\bswitch\b",
-    ],
-
     # Fan control
-    HardwareCapability.FAN_CONTROL: [
+    HardwareCapability.FAN_PWM: [
         r"\bfan\b", r"\bcooling\b", r"\btemperature\b",
     ],
 
