@@ -57,6 +57,7 @@ try:
     from ..network.task_queue import TaskQueue
     from ..network.task_executor import TaskExecutor
     from ..network.event_log import EventLog
+    from ..network.message_router import MessageRouter, RoutingDecision
     NETWORK_AVAILABLE = True
 except ImportError:
     NETWORK_AVAILABLE = False
@@ -143,6 +144,7 @@ class BrainBotDaemon:
         # Network/distributed features
         self._sync_daemon: Optional["SyncDaemon"] = None
         self._task_executor: Optional["TaskExecutor"] = None
+        self._message_router: Optional["MessageRouter"] = None
         self._node_id: Optional[str] = None
         self._manifest = None
         self._persona = None
@@ -1132,6 +1134,14 @@ Write as a journal entry with today's date:
                 event_log = EventLog(storage, self._node_id)
                 task_queue = TaskQueue(storage, event_log, self._node_id)
                 self._task_executor = TaskExecutor(task_queue, self._manifest)
+
+                # Initialize message router for smart routing
+                self._message_router = MessageRouter(
+                    registry=self._sync_daemon.registry,
+                    local_node_id=self._node_id,
+                    local_persona_name=self._persona.display_name,
+                )
+                logger.debug("Message router initialized")
             else:
                 logger.warning("Failed to start network sync daemon")
                 self._sync_daemon = None
@@ -1168,19 +1178,38 @@ Write as a journal entry with today's date:
         """
         Handle a chat message from terminal or Slack.
 
-        Delegates to Claude for a conversational response, with full
-        BrainBot context (brain memories, mood, energy, schedule).
+        Uses smart routing to:
+        1. Check for explicit node name ("Echo, turn on the LEDs")
+        2. Detect capability requirements ("turn on the LEDs" -> needs LED_STRIP)
+        3. Route to appropriate node or handle locally
 
         Args:
             message: The user's message
             source: Where the message came from ("terminal" or "slack")
         """
+        from datetime import datetime
+
+        # Check routing if message router is available
+        if self._message_router:
+            routing = self._message_router.route(message)
+            logger.debug(f"Routing decision: {routing.route_type} -> {routing.target_node_name}")
+
+            # Handle remote routing
+            if routing.route_type in ("explicit", "capability") and routing.target_node_id != self._node_id:
+                return self._handle_remote_chat(message, routing, source)
+
+            # Handle routing errors
+            if routing.route_type == "error":
+                return f"I can't do that right now: {routing.message}"
+
+            # Use cleaned message for local handling
+            message = routing.cleaned_message or message
+
         # Check if Claude is available
         if not self.delegator.check_claude_available():
             return "Sorry, I can't chat right now - Claude CLI is not available."
 
         # Add message to shared history
-        from datetime import datetime
         self._conversation_history.append({
             "role": "human",
             "content": message,
@@ -1199,12 +1228,18 @@ Write as a journal entry with today's date:
 
         # Build personality system prompt (static) and dynamic context
         state = self.state_manager.get_state()
-        personality = """You are BrainBot, a friendly autonomous AI assistant.
+
+        # Include node persona in personality
+        node_info = ""
+        if self._persona:
+            node_info = f"\nYou are currently running on the '{self._persona.display_name}' node."
+
+        personality = f"""You are BrainBot, a friendly autonomous AI assistant.
 You have a warm, curious personality. You love learning new things, creating projects,
 and writing bedtime stories. You maintain memories in markdown files.
 Keep responses concise but engaging. Be appropriate for all ages (PG-13 content only).
 You can reference your memories and what you've been working on.
-You can be reached via terminal, Slack, or email - you're the same BrainBot either way!"""
+You can be reached via terminal, Slack, or email - you're the same BrainBot either way!{node_info}"""
 
         context_update = f"""Current state:
 - Mood: {state.mood.value}
@@ -1213,6 +1248,7 @@ You can be reached via terminal, Slack, or email - you're the same BrainBot eith
 - Status: {state.status.value}
 - Active memories: {len(memories)} files
 - Current chat source: {source}
+- Node: {self._persona.display_name if self._persona else 'local'}
 {recent_memory}"""
 
         # Use shared conversation history (last 10 messages from any source)
@@ -1244,6 +1280,78 @@ You can be reached via terminal, Slack, or email - you're the same BrainBot eith
         else:
             logger.warning(f"Chat delegation failed: {result.error}")
             return "Hmm, I'm having trouble thinking right now. Try again in a moment?"
+
+    def _handle_remote_chat(self, message: str, routing: "RoutingDecision", source: str) -> str:
+        """
+        Handle a chat message that needs to be routed to a remote node.
+
+        Args:
+            message: The original message
+            routing: The routing decision
+            source: Where the message came from
+
+        Returns:
+            Response string (acknowledgment or result)
+        """
+        from datetime import datetime
+        from ..network.message_router import extract_task_from_message
+
+        logger.info(f"Routing to {routing.target_node_name}: {message[:50]}...")
+
+        # Add to conversation history
+        self._conversation_history.append({
+            "role": "human",
+            "content": message,
+            "source": source,
+            "timestamp": datetime.now().isoformat(),
+        })
+
+        # Extract task type and payload
+        task_type, payload = extract_task_from_message(
+            routing.cleaned_message or message,
+            routing.required_capabilities,
+        )
+
+        # Create and submit task
+        import uuid
+        from ..network.models import NetworkTask
+
+        task = NetworkTask(
+            task_id=str(uuid.uuid4()),
+            task_type=task_type,
+            payload={
+                **payload,
+                "source": source,
+                "original_message": message,
+            },
+            priority=5,
+            created_by=self._node_id,
+            target_node=routing.target_node_id,
+            required_capabilities=[c.value for c in routing.required_capabilities],
+        )
+
+        # Submit to task queue
+        if self._task_executor and self._task_executor.queue:
+            success = self._task_executor.queue.enqueue(task)
+            if success:
+                response = f"Got it! I'm sending that to {routing.target_node_name}..."
+                logger.info(f"Task {task.task_id[:8]} queued for {routing.target_node_name}")
+            else:
+                response = f"I tried to reach {routing.target_node_name}, but couldn't queue the task."
+                logger.error(f"Failed to queue task for {routing.target_node_name}")
+        else:
+            response = f"I'd send that to {routing.target_node_name}, but the network isn't fully connected right now."
+            logger.warning("Task queue not available for remote routing")
+
+        # Add response to history
+        self._conversation_history.append({
+            "role": "brainbot",
+            "content": response,
+            "source": source,
+            "timestamp": datetime.now().isoformat(),
+        })
+
+        return response
 
     def _save_conversation(self, history: list[dict]) -> None:
         """
