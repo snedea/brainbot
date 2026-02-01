@@ -309,6 +309,76 @@ Format as a journal entry with today's date."""
 
         return env
 
+    def quick_query(
+        self,
+        prompt: str,
+        timeout_seconds: int = 30,
+    ) -> DelegationResult:
+        """
+        Quick print-only query to Claude (no tools, no agentic behavior).
+
+        Use this for simple analysis tasks like intent detection
+        where you just need a quick response without tool use.
+
+        Args:
+            prompt: The prompt to send
+            timeout_seconds: Timeout in seconds (default 30)
+
+        Returns:
+            DelegationResult with output
+        """
+        # Use --print flag for non-agentic, direct response
+        cmd = ["claude", "--print", prompt]
+
+        logger.debug(f"Quick query to Claude ({len(prompt)} chars, {timeout_seconds}s timeout)")
+        start_time = time.time()
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                env=self._get_env(),
+            )
+
+            duration = time.time() - start_time
+            success = result.returncode == 0
+
+            return DelegationResult(
+                success=success,
+                output=result.stdout,
+                error=result.stderr if result.stderr else None,
+                duration_seconds=duration,
+                exit_code=result.returncode,
+                task_description=prompt[:100],
+            )
+
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Quick query timed out after {timeout_seconds}s")
+            return DelegationResult(
+                success=False,
+                output="",
+                error=f"Query timed out after {timeout_seconds}s",
+                duration_seconds=timeout_seconds,
+                exit_code=-1,
+                task_description=prompt[:100],
+            )
+        except FileNotFoundError:
+            return DelegationResult(
+                success=False,
+                output="",
+                error="Claude CLI not found",
+                task_description=prompt[:100],
+            )
+        except Exception as e:
+            return DelegationResult(
+                success=False,
+                output="",
+                error=str(e),
+                task_description=prompt[:100],
+            )
+
     def delegate_for_chat(
         self,
         message: str,
@@ -371,14 +441,19 @@ You should be appropriate for all ages (PG-13 content only)."""
     def check_claude_available(self) -> bool:
         """Check if Claude CLI is available."""
         try:
+            env = self._get_env()
+            logger.info(f"Checking Claude CLI... PATH starts with: {env.get('PATH', '')[:80]}")
             result = subprocess.run(
                 ["claude", "--version"],
                 capture_output=True,
                 text=True,
                 timeout=10,
-                env=self._get_env(),
+                env=env,
             )
-            return result.returncode == 0
-        except Exception:
+            available = result.returncode == 0
+            logger.info(f"Claude CLI available: {available} (rc={result.returncode}, out={result.stdout.strip() if result.stdout else 'none'}, err={result.stderr.strip() if result.stderr else 'none'})")
+            return available
+        except Exception as e:
+            logger.error(f"Claude availability check exception: {e}")
             return False
 

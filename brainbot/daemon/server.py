@@ -138,6 +138,17 @@ except ImportError:
     HardwareCommandHandler = None
     get_hardware_handler = None
 
+# Optional face animator for 5-inch LCD
+try:
+    from ..hardware.face import FaceAnimator, get_face_animator, stop_face_animator, Expression
+    FACE_AVAILABLE = True
+except ImportError:
+    FACE_AVAILABLE = False
+    FaceAnimator = None
+    get_face_animator = None
+    stop_face_animator = None
+    Expression = None
+
 # Optional TTS (Piper text-to-speech)
 try:
     import sys
@@ -281,6 +292,9 @@ class BrainBotDaemon:
 
         # Hardware command handler (AI-powered)
         self._hardware_handler: Optional["HardwareCommandHandler"] = None
+
+        # Face animator for 5-inch LCD
+        self._face_animator: Optional["FaceAnimator"] = None
 
     def _init_claude_md(self) -> None:
         """Initialize CLAUDE.md file if it doesn't exist."""
@@ -714,8 +728,11 @@ class BrainBotDaemon:
         # Initialize autonomous behavior engine
         self._start_autonomous_engine()
 
-        # Initialize display loop for LCD cycling
+        # Initialize display loop for 1-inch LCD status cycling
         self._start_display_loop()
+
+        # Initialize face animator for 5-inch LCD (BrainBot's face!)
+        self._start_face_animator()
 
         self.running = True
 
@@ -772,6 +789,9 @@ class BrainBotDaemon:
 
         # Stop display loop
         self._stop_display_loop()
+
+        # Stop face animator
+        self._stop_face_animator()
 
         # Stop Slack network
         self._stop_slack_network()
@@ -1562,6 +1582,56 @@ Write as a journal entry with today's date:
             self._display_loop = None
             logger.debug("Display loop stopped")
 
+    # ========== Face Animator (5-inch LCD) ==========
+
+    def _start_face_animator(self) -> None:
+        """Initialize and start the face animator on 5-inch LCD."""
+        if not FACE_AVAILABLE:
+            logger.debug("Face animator not available")
+            return
+
+        try:
+            # Create callbacks for dynamic state
+            def get_mood():
+                state = self.state_manager.get_state()
+                return state.mood.value
+
+            def get_activity():
+                state = self.state_manager.get_state()
+                return state.current_activity
+
+            def get_energy():
+                state = self.state_manager.get_state()
+                return state.energy
+
+            self._face_animator = get_face_animator(
+                get_mood=get_mood,
+                get_activity=get_activity,
+                get_energy=get_energy,
+            )
+            self._face_animator.start()
+            logger.info("Face animator started on 5-inch LCD")
+
+        except Exception as e:
+            logger.error(f"Failed to start face animator: {e}")
+            self._face_animator = None
+
+    def _stop_face_animator(self) -> None:
+        """Stop the face animator."""
+        if self._face_animator:
+            self._face_animator.stop()
+            self._face_animator = None
+            logger.debug("Face animator stopped")
+
+    def _face_react(self, expression_name: str, duration: float = 2.0) -> None:
+        """Trigger a face expression reaction."""
+        if self._face_animator and Expression:
+            try:
+                expr = Expression(expression_name)
+                self._face_animator.trigger_expression(expr, duration)
+            except ValueError:
+                pass  # Invalid expression name
+
     # ========== Slack Network Communication ==========
 
     def _start_slack_network(self) -> None:
@@ -1629,6 +1699,7 @@ Write as a journal entry with today's date:
             source: Where the message came from ("terminal" or "slack")
         """
         from datetime import datetime
+        logger.info(f"[CHAT-ENTRY] _handle_chat called from {source}: {message[:80]}...")
 
         # Check routing if message router is available
         if self._message_router:
@@ -1651,7 +1722,10 @@ Write as a journal entry with today's date:
             self._autonomous_engine.record_human_interaction()
 
         # Check if Claude is available
-        if not self.delegator.check_claude_available():
+        logger.info(f"[CHAT] Checking Claude availability for message: {message[:50]}...")
+        claude_available = self.delegator.check_claude_available()
+        logger.info(f"[CHAT] Claude available: {claude_available}")
+        if not claude_available:
             return "Sorry, I can't chat right now - Claude CLI is not available."
 
         # Check for hardware commands (display, LED, etc.) using AI detection
@@ -1741,21 +1815,19 @@ You can be reached via terminal, Slack, or email - you're the same BrainBot eith
             self._leds.acknowledge()
             self._leds.set_mood("thinking")
 
+        # Face reacts: surprised/curious when receiving message, then thinking
+        if self._face_animator:
+            self._face_animator.trigger_expression(Expression.SURPRISED, 0.5)
+            import time
+            time.sleep(0.3)
+            self._face_animator.trigger_expression(Expression.THINKING, 10.0)
+
         # Show incoming message on 1-inch LCD
         if self._lcd:
             self._lcd.display_chat(source, message)
             import time
             time.sleep(0.5)  # Brief display of incoming message
             self._lcd.display_thinking()
-
-        # Show incoming message on 5-inch LCD
-        if DISPLAY_MANAGER_AVAILABLE and show_message:
-            try:
-                # Show the incoming message briefly
-                msg_preview = message[:100] + "..." if len(message) > 100 else message
-                show_message(msg_preview, title=f"Message from {source}", duration=5)
-            except Exception as e:
-                logger.debug(f"5-inch display failed: {e}")
 
         # Delegate to Claude
         logger.debug(f"Chat [{source}]: {message[:50]}...")
@@ -1771,6 +1843,11 @@ You can be reached via terminal, Slack, or email - you're the same BrainBot eith
             if self._leds:
                 self._leds.set_mood("speaking")
             response = result.output.strip()
+
+            # Face shows happy/speaking expression
+            if self._face_animator:
+                self._face_animator.trigger_expression(Expression.HAPPY, 5.0)
+                self._face_animator.set_speaking(True)
 
             # Show response on LCD
             if self._lcd:
@@ -1810,19 +1887,15 @@ You can be reached via terminal, Slack, or email - you're the same BrainBot eith
                 time.sleep(1)
                 self._leds.set_mood("idle")
 
+            # Face returns to idle (stop speaking, content expression)
+            if self._face_animator:
+                self._face_animator.set_speaking(False)
+                self._face_animator.trigger_expression(Expression.IDLE, 0)
+
             # Update 1-inch LCD to idle state
             if self._lcd:
                 state = self.state_manager.get_state()
                 self._lcd.display_idle(state.mood.value)
-
-            # Show response on 5-inch LCD
-            if DISPLAY_MANAGER_AVAILABLE and show_message:
-                try:
-                    # Show response for 15 seconds
-                    resp_preview = response[:200] + "..." if len(response) > 200 else response
-                    show_message(resp_preview, title="BrainBot says:", duration=15)
-                except Exception as e:
-                    logger.debug(f"5-inch display failed: {e}")
 
             return response
         else:
@@ -1832,6 +1905,12 @@ You can be reached via terminal, Slack, or email - you're the same BrainBot eith
                 import time
                 time.sleep(2)
                 self._leds.set_mood("idle")
+
+            # Face shows sad expression on error
+            if self._face_animator:
+                self._face_animator.set_speaking(False)
+                self._face_animator.trigger_expression(Expression.SAD, 3.0)
+
             if self._lcd:
                 self._lcd.display_text("Error", "Try again...", "")
             return "Hmm, I'm having trouble thinking right now. Try again in a moment?"

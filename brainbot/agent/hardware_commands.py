@@ -96,7 +96,8 @@ If they're just chatting about displays/LEDs without wanting action, set false.'
 
         prompt = self.DETECTION_PROMPT.format(message=message)
 
-        result = self.delegator.delegate(task=prompt, timeout_minutes=1)
+        # Use quick_query for fast, non-agentic detection (30 second timeout)
+        result = self.delegator.quick_query(prompt, timeout_seconds=30)
 
         if not result.success:
             logger.warning(f"Command detection failed: {result.error}")
