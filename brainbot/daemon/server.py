@@ -157,6 +157,83 @@ class BrainBotDaemon:
             claude_md.write_text(DEFAULT_CLAUDE_MD)
             logger.info(f"Created initial CLAUDE.md at {claude_md}")
 
+    def _auto_update(self) -> bool:
+        """
+        Auto-pull latest code from git on daemon start.
+
+        Returns:
+            True if update succeeded or no update needed, False on error
+        """
+        import subprocess
+
+        # Find git repo root (where this code lives)
+        try:
+            # Get the directory containing the brainbot package
+            import brainbot
+            package_dir = Path(brainbot.__file__).parent.parent
+
+            # Check if it's a git repo
+            git_dir = package_dir / ".git"
+            if not git_dir.exists():
+                logger.debug("Not a git repository, skipping auto-update")
+                return True
+
+            logger.info("Checking for updates...")
+
+            # Fetch first to see if there are changes
+            fetch_result = subprocess.run(
+                ["git", "fetch", "origin", "main"],
+                cwd=package_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if fetch_result.returncode != 0:
+                logger.warning(f"Git fetch failed: {fetch_result.stderr}")
+                return True  # Continue anyway
+
+            # Check if we're behind
+            status_result = subprocess.run(
+                ["git", "status", "-uno"],
+                cwd=package_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if "Your branch is behind" in status_result.stdout:
+                logger.info("Updates available, pulling latest code...")
+
+                # Pull the latest
+                pull_result = subprocess.run(
+                    ["git", "pull", "origin", "main"],
+                    cwd=package_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+
+                if pull_result.returncode == 0:
+                    logger.info(f"Auto-update successful: {pull_result.stdout.strip()}")
+                    return True
+                else:
+                    logger.error(f"Git pull failed: {pull_result.stderr}")
+                    return False
+            else:
+                logger.info("Already up to date")
+                return True
+
+        except subprocess.TimeoutExpired:
+            logger.warning("Git operation timed out, continuing with current code")
+            return True
+        except FileNotFoundError:
+            logger.warning("Git not found, skipping auto-update")
+            return True
+        except Exception as e:
+            logger.warning(f"Auto-update failed: {e}, continuing with current code")
+            return True
+
     def _setup_logging(self, background_mode: bool = False) -> None:
         """
         Configure logging.
@@ -429,6 +506,10 @@ class BrainBotDaemon:
         if self._check_pid_file():
             print("BrainBot daemon is already running", file=sys.stderr)
             return False
+
+        # Auto-update from git before starting
+        print("Checking for updates...")
+        self._auto_update()
 
         status_pipe_r = None
 
