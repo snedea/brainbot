@@ -389,9 +389,9 @@ class StorageClient:
             "s3": {"connected": False, "error": None},
         }
 
-        # Test R2
+        # Test R2 (use head_bucket instead of list_buckets for bucket-scoped tokens)
         try:
-            self.r2_client.list_buckets()
+            self.r2_client.head_bucket(Bucket=self.config.r2_bucket)
             result["r2"]["connected"] = True
         except Exception as e:
             result["r2"]["error"] = str(e)
@@ -399,7 +399,7 @@ class StorageClient:
         # Test S3
         if self.config.enable_s3_backup:
             try:
-                self.s3_client.list_buckets()
+                self.s3_client.head_bucket(Bucket=self.config.s3_bucket)
                 result["s3"]["connected"] = True
             except Exception as e:
                 result["s3"]["error"] = str(e)
