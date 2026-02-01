@@ -505,7 +505,13 @@ class BrainBotDaemon:
     def _ensure_path(self) -> None:
         """Ensure PATH includes common binary locations."""
         current_path = os.environ.get("PATH", "")
+
+        # Get home directory for user-specific paths
+        home = os.environ.get("HOME", os.path.expanduser("~"))
+
         required_paths = [
+            f"{home}/.npm-global/bin",  # Claude CLI installed via npm
+            f"{home}/.local/bin",       # pip install --user binaries
             "/opt/homebrew/bin",
             "/usr/local/bin",
             "/opt/homebrew/sbin",

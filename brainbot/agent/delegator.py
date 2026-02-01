@@ -299,6 +299,14 @@ Format as a journal entry with today's date."""
         if "HOME" not in env:
             import pwd
             env["HOME"] = pwd.getpwuid(os.getuid()).pw_dir
+
+        # Ensure npm-global bin is in PATH (where claude CLI is installed)
+        home = env.get("HOME", "/home/brainbot")
+        npm_bin = f"{home}/.npm-global/bin"
+        current_path = env.get("PATH", "")
+        if npm_bin not in current_path:
+            env["PATH"] = f"{npm_bin}:{current_path}"
+
         return env
 
     def delegate_for_chat(
@@ -368,6 +376,7 @@ You should be appropriate for all ages (PG-13 content only)."""
                 capture_output=True,
                 text=True,
                 timeout=10,
+                env=self._get_env(),
             )
             return result.returncode == 0
         except Exception:

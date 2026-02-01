@@ -435,7 +435,7 @@ class AutonomousEngine:
         # Get brain context if available
         brain_context = ""
         if self.brain:
-            brain_context = self.brain.build_context(max_chars=2000)
+            brain_context = self.brain.build_context()[:2000]
 
         prompts = {
             ActivityType.WEB_SEARCH: f"""You are BrainBot, looking for something interesting to learn.
