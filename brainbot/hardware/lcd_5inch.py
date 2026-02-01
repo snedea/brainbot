@@ -157,6 +157,7 @@ class LCD5Inch:
         progress: float = 0.0,
         mood: Optional[str] = None,
         energy: Optional[float] = None,
+        save_path: Optional[str] = None,
     ) -> None:
         """
         Display status information.
@@ -209,12 +210,12 @@ class LCD5Inch:
                         fill=(150, 200, 150),
                     )
 
-            self._render_image(image)
+            self._render_image(image, save_path=save_path)
 
         except Exception as e:
             logger.error(f"Failed to display status: {e}")
 
-    def display_story(self, title: str, text: str, page: int = 1) -> None:
+    def display_story(self, title: str, text: str, page: int = 1, save_path: Optional[str] = None) -> None:
         """
         Display a bedtime story.
 
@@ -273,7 +274,7 @@ class LCD5Inch:
                     fill=(150, 150, 170),
                 )
 
-            self._render_image(image)
+            self._render_image(image, save_path=save_path)
 
         except Exception as e:
             logger.error(f"Failed to display story: {e}")
@@ -283,6 +284,7 @@ class LCD5Inch:
         message: str,
         title: Optional[str] = None,
         color: Tuple[int, int, int] = (255, 255, 255),
+        save_path: Optional[str] = None,
     ) -> None:
         """
         Display a simple message with dynamic font sizing.
@@ -350,10 +352,74 @@ class LCD5Inch:
                 draw.text((x, y), line, font=message_font, fill=color)
 
             logger.debug(f"Displaying message with font size {font_size}px, {len(wrapped_lines)} lines")
-            self._render_image(image)
+            self._render_image(image, save_path=save_path)
 
         except Exception as e:
             logger.error(f"Failed to display message: {e}")
+
+    def display_banner(self, save_path: Optional[str] = None) -> None:
+        """
+        Display the BrainBot banner with rainbow colors.
+        """
+        if not PIL_AVAILABLE:
+            logger.debug("LCD5Inch (sim): Banner")
+            return
+
+        try:
+            # Dark background
+            image = Image.new("RGB", (self.width, self.height), color=(15, 15, 25))
+            draw = ImageDraw.Draw(image)
+
+            # Rainbow colors for the banner
+            rainbow = [
+                (255, 0, 0),      # Red
+                (255, 127, 0),    # Orange
+                (255, 255, 0),    # Yellow
+                (0, 255, 0),      # Green
+                (0, 127, 255),    # Blue
+                (75, 0, 130),     # Indigo
+                (148, 0, 211),    # Violet
+            ]
+
+            # Large font for BRAINBOT
+            if self._font_path:
+                banner_font = ImageFont.truetype(self._font_path, 90)
+                small_font = ImageFont.truetype(self._font_path, 36)
+            else:
+                banner_font = self._font_title
+                small_font = self._font_body
+
+            # Draw BRAINBOT with each letter in rainbow
+            text = "BRAINBOT"
+            # Calculate total width to center
+            total_width = sum(banner_font.getbbox(c)[2] - banner_font.getbbox(c)[0] for c in text)
+            total_width += (len(text) - 1) * 5  # spacing
+
+            x = (self.width - total_width) // 2
+            y = self.height // 2 - 60
+
+            for i, char in enumerate(text):
+                color = rainbow[i % len(rainbow)]
+                draw.text((x, y), char, font=banner_font, fill=color)
+                bbox = banner_font.getbbox(char)
+                x += (bbox[2] - bbox[0]) + 5  # char width + spacing
+
+            # Subtitle
+            subtitle = "Autonomous AI Agent"
+            sub_bbox = small_font.getbbox(subtitle)
+            sub_width = sub_bbox[2] - sub_bbox[0]
+            sub_x = (self.width - sub_width) // 2
+            draw.text((sub_x, y + 110), subtitle, font=small_font, fill=(150, 150, 180))
+
+            # Decorative lines
+            line_y = y + 95
+            draw.line([(50, line_y), (self.width // 2 - 100, line_y)], fill=(60, 60, 80), width=2)
+            draw.line([(self.width // 2 + 100, line_y), (self.width - 50, line_y)], fill=(60, 60, 80), width=2)
+
+            self._render_image(image, save_path=save_path)
+
+        except Exception as e:
+            logger.error(f"Failed to display banner: {e}")
 
     def clear(self) -> None:
         """Clear the display."""
@@ -369,19 +435,21 @@ class LCD5Inch:
         wrapped = textwrap.wrap(text, width=chars_per_line)
         return wrapped
 
-    def _render_image(self, image: "Image") -> None:
+    def _render_image(self, image: "Image", save_path: Optional[str] = None) -> None:
         """
-        Render an image to the display via framebuffer.
+        Render an image to the display.
 
-        Writes directly to /dev/fb0 (DSI display) if available.
+        Args:
+            image: PIL Image to display
+            save_path: If provided, save image to this path (for desktop mode)
         """
-        # Save debug image
-        try:
-            debug_path = "/tmp/brainbot_lcd5inch_debug.png"
-            image.save(debug_path)
-            logger.debug(f"LCD5Inch image saved to {debug_path}")
-        except Exception as e:
-            logger.debug(f"Could not save debug image: {e}")
+        # Save to file if path provided (for feh display)
+        if save_path:
+            try:
+                image.save(save_path, "PNG")
+                logger.debug(f"Image saved to {save_path}")
+            except Exception as e:
+                logger.error(f"Failed to save image: {e}")
 
         # Try to render to framebuffer
         try:
