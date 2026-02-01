@@ -22,6 +22,15 @@ try:
 except Exception:
     pass
 
+# Load .env file for configuration (Slack tokens, etc.)
+try:
+    from dotenv import load_dotenv
+    env_file = Path(__file__).parent.parent.parent / ".env"
+    if env_file.exists():
+        load_dotenv(env_file)
+except ImportError:
+    pass  # dotenv not required
+
 from ..config.settings import Settings
 from ..config.defaults import DEFAULT_CLAUDE_MD
 from ..version import get_version, get_version_full
@@ -63,6 +72,84 @@ try:
 except ImportError:
     NETWORK_AVAILABLE = False
     SyncDaemon = None
+
+# Optional LED controller for expressive lighting
+try:
+    from ..hardware.expansion_leds import get_leds, ExpansionLEDs
+    LED_AVAILABLE = True
+except ImportError:
+    LED_AVAILABLE = False
+
+# Optional LCD display (1-inch OLED)
+try:
+    from ..hardware.lcd_1inch import get_lcd_1inch, LCD1Inch
+    LCD_AVAILABLE = True
+except ImportError:
+    LCD_AVAILABLE = False
+
+# Optional 5-inch LCD display manager
+try:
+    from ..hardware.display_manager import show_message, show_story, close_display
+    DISPLAY_MANAGER_AVAILABLE = True
+except ImportError:
+    DISPLAY_MANAGER_AVAILABLE = False
+    show_message = None
+
+# Optional display loop for cycling content
+try:
+    from ..hardware.display_loop import DisplayLoop, get_display_loop
+    DISPLAY_LOOP_AVAILABLE = True
+except ImportError:
+    DISPLAY_LOOP_AVAILABLE = False
+    DisplayLoop = None
+    get_display_loop = None
+
+# Optional Slack network communication
+try:
+    from ..network.slack_network import SlackNetworkBot, get_slack_network
+    SLACK_NETWORK_AVAILABLE = True
+except ImportError:
+    SLACK_NETWORK_AVAILABLE = False
+    SlackNetworkBot = None
+    get_slack_network = None
+
+# Optional autonomous behavior engine
+try:
+    from ..agent.autonomous import AutonomousEngine, ActivityType
+    AUTONOMOUS_AVAILABLE = True
+except ImportError:
+    AUTONOMOUS_AVAILABLE = False
+    AutonomousEngine = None
+
+# Optional task generator
+try:
+    from ..agent.task_generator import TaskGenerator
+    TASK_GENERATOR_AVAILABLE = True
+except ImportError:
+    TASK_GENERATOR_AVAILABLE = False
+    TaskGenerator = None
+
+# Optional hardware command handler
+try:
+    from ..agent.hardware_commands import HardwareCommandHandler, get_hardware_handler
+    HARDWARE_COMMANDS_AVAILABLE = True
+except ImportError:
+    HARDWARE_COMMANDS_AVAILABLE = False
+    HardwareCommandHandler = None
+    get_hardware_handler = None
+
+# Optional TTS (Piper text-to-speech)
+try:
+    import sys
+    # Add parent directory to find tts module
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from tts.piper_cli import PiperTTS
+    from config.env_loader import load_voice_config
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
+    PiperTTS = None
+    load_voice_config = None
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +236,51 @@ class BrainBotDaemon:
         self._node_id: Optional[str] = None
         self._manifest = None
         self._persona = None
+
+        # LED controller for expressive lighting
+        self._leds: Optional["ExpansionLEDs"] = None
+        if LED_AVAILABLE:
+            try:
+                self._leds = get_leds()
+                logger.info("LED controller initialized")
+            except Exception as e:
+                logger.warning(f"LED init failed: {e}")
+
+        # LCD display (1-inch OLED) for status/messages
+        self._lcd: Optional["LCD1Inch"] = None
+        if LCD_AVAILABLE:
+            try:
+                self._lcd = get_lcd_1inch()
+                if self._lcd and self._lcd.is_available():
+                    logger.info("LCD1Inch initialized")
+                    self._lcd.display_text("BrainBot", "Starting...", "")
+            except Exception as e:
+                logger.warning(f"LCD init failed: {e}")
+
+        # TTS for audio responses
+        self._tts: Optional["PiperTTS"] = None
+        if TTS_AVAILABLE:
+            try:
+                voice_config = load_voice_config()
+                self._tts = PiperTTS(voice_config)
+                logger.info("TTS (Piper) initialized")
+            except Exception as e:
+                logger.warning(f"TTS init failed: {e}")
+
+        # Display loop for cycling content on LCDs
+        self._display_loop: Optional["DisplayLoop"] = None
+
+        # Slack network communication
+        self._slack_network: Optional["SlackNetworkBot"] = None
+
+        # Autonomous behavior engine
+        self._autonomous_engine: Optional["AutonomousEngine"] = None
+
+        # Task generator
+        self._task_generator: Optional["TaskGenerator"] = None
+
+        # Hardware command handler (AI-powered)
+        self._hardware_handler: Optional["HardwareCommandHandler"] = None
 
     def _init_claude_md(self) -> None:
         """Initialize CLAUDE.md file if it doesn't exist."""
@@ -573,9 +705,22 @@ class BrainBotDaemon:
         # Initialize network/distributed features if configured
         self._start_network()
 
+        # Initialize autonomous behavior engine
+        self._start_autonomous_engine()
+
+        # Initialize display loop for LCD cycling
+        self._start_display_loop()
+
         self.running = True
 
         logger.info(f"BrainBot daemon started (PID {os.getpid()})")
+
+        # Flash LEDs to show we're alive, then set to idle
+        if self._leds:
+            self._leds.success()
+            import time
+            time.sleep(0.5)
+            self._leds.set_mood("idle")
         if foreground:
             logger.info("Running in foreground (Ctrl+C to stop)")
             # Start terminal interface in foreground mode
@@ -619,6 +764,12 @@ class BrainBotDaemon:
         # Stop network sync daemon
         self._stop_network()
 
+        # Stop display loop
+        self._stop_display_loop()
+
+        # Stop Slack network
+        self._stop_slack_network()
+
         # Cancel any active delegations
         if self.delegator:
             self.delegator.cancel_active()
@@ -638,6 +789,13 @@ class BrainBotDaemon:
 
         # Remove PID file
         self._remove_pid_file()
+
+        # Set LEDs to sleeping on shutdown
+        if self._leds:
+            try:
+                self._leds.set_mood("sleeping")
+            except:
+                pass
 
         logger.info("BrainBot daemon stopped")
 
@@ -727,6 +885,9 @@ class BrainBotDaemon:
         # Poll and execute network tasks if available
         self._poll_network_tasks()
 
+        # Run autonomous activities if idle
+        self._tick_autonomous_engine()
+
     def _story_tick(self) -> None:
         """Bedtime story writing - check if story is done."""
         state = self.state_manager.get_state()
@@ -744,14 +905,28 @@ class BrainBotDaemon:
     def _on_wake(self) -> None:
         """Called when it's time to wake up."""
         logger.info("Good morning! Starting a new day.")
+        if self._leds:
+            self._leds.set_mood("happy")  # Bright and cheerful on wake
         self.state_manager.reset_for_new_day()
         self.state_manager.wake_up()
+
+        # Reset autonomous engine daily counts
+        if self._autonomous_engine:
+            self._autonomous_engine.reset_daily_counts()
+
+        # Clear task generator history for fresh task generation
+        if self._task_generator:
+            self._task_generator.clear_task_history()
 
     def _on_morning_routine(self) -> None:
         """Called when morning routine should complete - plan the day."""
         logger.info("Morning routine complete. Planning the day!")
+        if self._leds:
+            self._leds.set_mood("thinking")  # Rainbow while planning
         self._do_morning_planning()
         self.state_manager.become_active()
+        if self._leds:
+            self._leds.set_mood("idle")  # Calm when ready
 
     def _do_morning_planning(self) -> None:
         """Review memories and create today's plan."""
@@ -957,6 +1132,10 @@ Write as a journal entry with today's date:
         self._do_nightly_maintenance()
 
         self.state_manager.go_to_sleep()
+
+        # Dim LEDs for sleep
+        if self._leds:
+            self._leds.set_mood("sleeping")
 
     def _do_nightly_maintenance(self) -> None:
         """Perform nightly brain maintenance before sleep."""
@@ -1224,6 +1403,9 @@ Write as a journal entry with today's date:
                     local_persona_name=self._persona.display_name,
                 )
                 logger.debug("Message router initialized")
+
+                # Start Slack network communication
+                self._start_slack_network()
             else:
                 logger.warning("Failed to start network sync daemon")
                 self._sync_daemon = None
@@ -1256,6 +1438,177 @@ Write as a journal entry with today's date:
         except Exception as e:
             logger.error(f"Error polling network tasks: {e}")
 
+    # ========== Autonomous Behavior Engine ==========
+
+    def _start_autonomous_engine(self) -> None:
+        """Initialize and start the autonomous behavior engine."""
+        if not AUTONOMOUS_AVAILABLE:
+            logger.debug("Autonomous engine not available")
+            return
+
+        try:
+            self._autonomous_engine = AutonomousEngine(
+                delegator=self.delegator,
+                brain=self.brain,
+                state_manager=self.state_manager,
+                network_registry=self._sync_daemon.registry if self._sync_daemon else None,
+                task_queue=self._task_executor.queue if self._task_executor else None,
+                min_idle_seconds=120,  # Wait 2 minutes before autonomous activity
+            )
+
+            # Initialize task generator if available
+            if TASK_GENERATOR_AVAILABLE:
+                self._task_generator = TaskGenerator(
+                    brain=self.brain,
+                    network_registry=self._sync_daemon.registry if self._sync_daemon else None,
+                    task_queue=self._task_executor.queue if self._task_executor else None,
+                    delegator=self.delegator,
+                )
+
+            # Initialize hardware command handler
+            if HARDWARE_COMMANDS_AVAILABLE:
+                self._hardware_handler = get_hardware_handler(self.delegator)
+                logger.info("Hardware command handler initialized")
+
+            logger.info("Autonomous behavior engine initialized")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize autonomous engine: {e}")
+            self._autonomous_engine = None
+
+    def _tick_autonomous_engine(self) -> None:
+        """Run one tick of the autonomous engine."""
+        if not self._autonomous_engine:
+            return
+
+        try:
+            result = self._autonomous_engine.tick()
+            if result:
+                logger.info(f"Autonomous activity completed: {result[:100]}...")
+
+                # Save result to brain if significant
+                if len(result) > 50:
+                    self.brain.create_memory(
+                        title="Autonomous Activity",
+                        content=result,
+                        category="reflection",
+                    )
+
+        except Exception as e:
+            logger.error(f"Autonomous engine tick error: {e}")
+
+    # ========== Display Loop ==========
+
+    def _start_display_loop(self) -> None:
+        """Initialize and start the display loop."""
+        if not DISPLAY_LOOP_AVAILABLE:
+            logger.debug("Display loop not available")
+            return
+
+        try:
+            # Create callbacks for dynamic data
+            def get_current_task():
+                state = self.state_manager.get_state()
+                return state.current_activity
+
+            def get_network_status():
+                if self._slack_network:
+                    return self._slack_network.get_network_status()
+                elif self._sync_daemon and self._sync_daemon.registry:
+                    nodes = self._sync_daemon.registry.get_online_nodes()
+                    return {
+                        "online_nodes": len(nodes),
+                        "node_names": [n.persona.display_name for n in nodes],
+                        "pending_tasks": 0,
+                    }
+                return {"online_nodes": 1, "pending_tasks": 0}
+
+            def get_recent_memory():
+                memories = self.brain.get_active_memories()
+                if memories:
+                    return memories[0].name
+                return None
+
+            def get_mood():
+                state = self.state_manager.get_state()
+                return state.mood.value
+
+            self._display_loop = get_display_loop(
+                lcd_1inch=self._lcd,
+                lcd_5inch=None,  # 5-inch handled separately
+                cycle_interval=5,
+                get_current_task=get_current_task,
+                get_network_status=get_network_status,
+                get_recent_memory=get_recent_memory,
+                get_mood=get_mood,
+            )
+            self._display_loop.start()
+            logger.info("Display loop started")
+
+        except Exception as e:
+            logger.error(f"Failed to start display loop: {e}")
+            self._display_loop = None
+
+    def _stop_display_loop(self) -> None:
+        """Stop the display loop."""
+        if self._display_loop:
+            self._display_loop.stop()
+            self._display_loop = None
+            logger.debug("Display loop stopped")
+
+    # ========== Slack Network Communication ==========
+
+    def _start_slack_network(self) -> None:
+        """Initialize Slack network communication."""
+        if not SLACK_NETWORK_AVAILABLE:
+            logger.debug("Slack network not available")
+            return
+
+        if not self._node_id or not self._persona:
+            logger.debug("Node identity not available, skipping Slack network")
+            return
+
+        try:
+            self._slack_network = get_slack_network(
+                node_id=self._node_id,
+                node_name=self._persona.display_name,
+            )
+
+            if self._slack_network:
+                # Post boot announcement
+                from ..version import get_version
+                self._slack_network.post_node_boot(
+                    persona=self._persona.model_dump() if hasattr(self._persona, 'model_dump') else {
+                        "name": self._persona.name,
+                        "role": self._persona.role,
+                        "traits": self._persona.traits,
+                    },
+                    capabilities=[c.value for c in self._manifest.get_available_capabilities()] if self._manifest else [],
+                    version=get_version(),
+                )
+
+                # Start polling for tasks
+                self._slack_network.start_polling()
+
+                logger.info("Slack network communication initialized")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize Slack network: {e}")
+            self._slack_network = None
+
+    def _stop_slack_network(self) -> None:
+        """Stop Slack network communication."""
+        if self._slack_network:
+            # Post shutdown announcement
+            try:
+                self._slack_network.post_node_shutdown("daemon stopping")
+            except Exception:
+                pass
+
+            self._slack_network.stop_polling()
+            self._slack_network = None
+            logger.debug("Slack network stopped")
+
     def _handle_chat(self, message: str, source: str = "terminal") -> str:
         """
         Handle a chat message from terminal or Slack.
@@ -1287,9 +1640,50 @@ Write as a journal entry with today's date:
             # Use cleaned message for local handling
             message = routing.cleaned_message or message
 
+        # Record human interaction for autonomous engine
+        if self._autonomous_engine:
+            self._autonomous_engine.record_human_interaction()
+
         # Check if Claude is available
         if not self.delegator.check_claude_available():
             return "Sorry, I can't chat right now - Claude CLI is not available."
+
+        # Check for hardware commands (display, LED, etc.) using AI detection
+        if self._hardware_handler:
+            try:
+                hw_result = self._hardware_handler.process_message(message)
+                if hw_result is not None:
+                    success, hw_response = hw_result
+                    logger.info(f"Hardware command executed: {hw_response}")
+
+                    # Flash LEDs for acknowledgment
+                    if self._leds:
+                        if success:
+                            self._leds.success()
+                        else:
+                            self._leds.set_mood("error")
+                        import time
+                        time.sleep(0.5)
+                        self._leds.set_mood("idle")
+
+                    # Add to conversation history
+                    self._conversation_history.append({
+                        "role": "human",
+                        "content": message,
+                        "source": source,
+                        "timestamp": datetime.now().isoformat(),
+                    })
+                    self._conversation_history.append({
+                        "role": "brainbot",
+                        "content": hw_response,
+                        "source": source,
+                        "timestamp": datetime.now().isoformat(),
+                    })
+
+                    return hw_response
+            except Exception as e:
+                logger.error(f"Hardware command check failed: {e}")
+                # Continue with normal chat flow
 
         # Add message to shared history
         self._conversation_history.append({
@@ -1336,6 +1730,27 @@ You can be reached via terminal, Slack, or email - you're the same BrainBot eith
         # Use shared conversation history (last 10 messages from any source)
         history = self._conversation_history[-10:]
 
+        # Flash LEDs to acknowledge input
+        if self._leds:
+            self._leds.acknowledge()
+            self._leds.set_mood("thinking")
+
+        # Show incoming message on 1-inch LCD
+        if self._lcd:
+            self._lcd.display_chat(source, message)
+            import time
+            time.sleep(0.5)  # Brief display of incoming message
+            self._lcd.display_thinking()
+
+        # Show incoming message on 5-inch LCD
+        if DISPLAY_MANAGER_AVAILABLE and show_message:
+            try:
+                # Show the incoming message briefly
+                msg_preview = message[:100] + "..." if len(message) > 100 else message
+                show_message(msg_preview, title=f"Message from {source}", duration=5)
+            except Exception as e:
+                logger.debug(f"5-inch display failed: {e}")
+
         # Delegate to Claude
         logger.debug(f"Chat [{source}]: {message[:50]}...")
         result = self.delegator.delegate_for_chat(
@@ -1346,7 +1761,31 @@ You can be reached via terminal, Slack, or email - you're the same BrainBot eith
         )
 
         if result.success:
+            # Speaking mode while responding
+            if self._leds:
+                self._leds.set_mood("speaking")
             response = result.output.strip()
+
+            # Show response on LCD
+            if self._lcd:
+                self._lcd.display_speaking()
+
+            # Speak the response via TTS (non-blocking)
+            if self._tts:
+                try:
+                    # Use streaming for lower latency
+                    import threading
+                    tts_thread = threading.Thread(
+                        target=self._tts.speak,
+                        args=(response,),
+                        kwargs={"blocking": True},
+                        daemon=True
+                    )
+                    tts_thread.start()
+                    logger.debug("TTS speaking response...")
+                except Exception as e:
+                    logger.warning(f"TTS speak failed: {e}")
+
             # Add response to shared history
             self._conversation_history.append({
                 "role": "brainbot",
@@ -1358,9 +1797,37 @@ You can be reached via terminal, Slack, or email - you're the same BrainBot eith
             if len(self._conversation_history) > 50:
                 self._conversation_history = self._conversation_history[-50:]
             logger.debug(f"Response [{source}]: {response[:50]}...")
+
+            # Return to idle after a moment
+            if self._leds:
+                import time
+                time.sleep(1)
+                self._leds.set_mood("idle")
+
+            # Update 1-inch LCD to idle state
+            if self._lcd:
+                state = self.state_manager.get_state()
+                self._lcd.display_idle(state.mood.value)
+
+            # Show response on 5-inch LCD
+            if DISPLAY_MANAGER_AVAILABLE and show_message:
+                try:
+                    # Show response for 15 seconds
+                    resp_preview = response[:200] + "..." if len(response) > 200 else response
+                    show_message(resp_preview, title="BrainBot says:", duration=15)
+                except Exception as e:
+                    logger.debug(f"5-inch display failed: {e}")
+
             return response
         else:
             logger.warning(f"Chat delegation failed: {result.error}")
+            if self._leds:
+                self._leds.set_mood("error")
+                import time
+                time.sleep(2)
+                self._leds.set_mood("idle")
+            if self._lcd:
+                self._lcd.display_text("Error", "Try again...", "")
             return "Hmm, I'm having trouble thinking right now. Try again in a moment?"
 
     def _handle_remote_chat(self, message: str, routing: "RoutingDecision", source: str) -> str:
@@ -1506,6 +1973,22 @@ Write a concise summary:"""
         phase = self.schedule_manager.get_current_phase() if self.schedule_manager else None
         next_event = self.schedule_manager.get_time_until_next_event() if self.schedule_manager else None
 
+        # Get autonomous activity stats
+        autonomous_stats = None
+        if self._autonomous_engine:
+            autonomous_stats = self._autonomous_engine.get_activity_stats()
+
+        # Get network status
+        network_status = None
+        if self._slack_network:
+            network_status = self._slack_network.get_network_status()
+        elif self._sync_daemon and self._sync_daemon.registry:
+            nodes = self._sync_daemon.registry.get_online_nodes()
+            network_status = {
+                "online_nodes": len(nodes),
+                "node_names": [n.persona.display_name for n in nodes],
+            }
+
         return {
             "running": self.running,
             "pid": os.getpid(),
@@ -1529,6 +2012,14 @@ Write a concise summary:"""
             "node": {
                 "id": self._node_id[:8] if self._node_id else None,
                 "name": self._persona.display_name if self._persona else None,
+            },
+            "autonomous": {
+                "enabled": self._autonomous_engine is not None,
+                "stats": autonomous_stats,
+            },
+            "network": network_status,
+            "display_loop": {
+                "enabled": self._display_loop is not None,
             },
         }
 

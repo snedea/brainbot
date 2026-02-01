@@ -84,6 +84,15 @@ class HardwareConfig(BaseModel):
     fan: FanConfig = Field(default_factory=FanConfig)
 
 
+class SlackConfig(BaseModel):
+    """Slack integration configuration."""
+    enabled: bool = True
+    network_channel: str = ""  # Channel ID for #brainbot-network (e.g., C0XXXXXXX)
+    post_boot_announcements: bool = True
+    post_task_updates: bool = True
+    post_heartbeats: bool = False  # Usually too noisy
+
+
 class NetworkConfig(BaseModel):
     """Network/distributed configuration."""
     enabled: bool = False
@@ -103,6 +112,9 @@ class NetworkConfig(BaseModel):
     # Sync intervals
     heartbeat_interval_seconds: int = 60
     sync_interval_seconds: int = 300
+
+    # Slack network (real-time layer)
+    slack: SlackConfig = Field(default_factory=SlackConfig)
 
     @property
     def s3_configured(self) -> bool:
@@ -279,7 +291,11 @@ class Settings(BaseSettings):
 
                 # Handle nested network config
                 if "network" in config_data and isinstance(config_data["network"], dict):
-                    config_data["network"] = NetworkConfig(**config_data["network"])
+                    net = config_data["network"]
+                    # Handle nested slack config within network
+                    if "slack" in net and isinstance(net["slack"], dict):
+                        net["slack"] = SlackConfig(**net["slack"])
+                    config_data["network"] = NetworkConfig(**net)
 
                 settings = cls(**config_data)
                 logger.info(f"Loaded settings from {config_path}")

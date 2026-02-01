@@ -17,6 +17,16 @@ except ImportError:
     App = None
     SocketModeHandler = None
 
+# Check for slack_sdk availability (for network features)
+try:
+    from slack_sdk import WebClient
+    from slack_sdk.errors import SlackApiError
+    SLACK_SDK_AVAILABLE = True
+except ImportError:
+    SLACK_SDK_AVAILABLE = False
+    WebClient = None
+    SlackApiError = Exception
+
 
 class SlackBot:
     """
@@ -136,6 +146,121 @@ class SlackBot:
                 logger.info("Slack bot stopped")
             except Exception as e:
                 logger.error(f"Error stopping Slack bot: {e}")
+
+    # ========== Network Channel Methods ==========
+
+    def get_web_client(self) -> Optional["WebClient"]:
+        """
+        Get the underlying WebClient for direct API calls.
+
+        Returns:
+            WebClient instance if available
+        """
+        if SLACK_SDK_AVAILABLE and self.bot_token:
+            return WebClient(token=self.bot_token)
+        return None
+
+    def post_to_channel(
+        self,
+        channel: str,
+        text: str,
+        blocks: Optional[list] = None,
+        thread_ts: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Post a message to a channel.
+
+        Args:
+            channel: Channel ID to post to
+            text: Message text (fallback)
+            blocks: Rich message blocks
+            thread_ts: Thread timestamp for replies
+
+        Returns:
+            Message timestamp if successful
+        """
+        client = self.get_web_client()
+        if not client:
+            logger.warning("WebClient not available")
+            return None
+
+        try:
+            response = client.chat_postMessage(
+                channel=channel,
+                text=text,
+                blocks=blocks,
+                thread_ts=thread_ts,
+            )
+            return response.get("ts")
+        except Exception as e:
+            logger.error(f"Failed to post to channel: {e}")
+            return None
+
+    def add_reaction(
+        self,
+        channel: str,
+        timestamp: str,
+        emoji: str,
+    ) -> bool:
+        """
+        Add a reaction to a message.
+
+        Args:
+            channel: Channel ID
+            timestamp: Message timestamp
+            emoji: Emoji name (without colons)
+
+        Returns:
+            True if successful
+        """
+        client = self.get_web_client()
+        if not client:
+            return False
+
+        try:
+            client.reactions_add(
+                channel=channel,
+                timestamp=timestamp,
+                name=emoji,
+            )
+            return True
+        except Exception as e:
+            if "already_reacted" in str(e):
+                return True
+            logger.error(f"Failed to add reaction: {e}")
+            return False
+
+    def get_channel_history(
+        self,
+        channel: str,
+        limit: int = 10,
+        oldest: Optional[str] = None,
+    ) -> list[dict]:
+        """
+        Get recent messages from a channel.
+
+        Args:
+            channel: Channel ID
+            limit: Maximum messages to return
+            oldest: Only get messages newer than this timestamp
+
+        Returns:
+            List of message dicts
+        """
+        client = self.get_web_client()
+        if not client:
+            return []
+
+        try:
+            kwargs = {"channel": channel, "limit": limit}
+            if oldest:
+                kwargs["oldest"] = oldest
+
+            response = client.conversations_history(**kwargs)
+            return response.get("messages", [])
+        except Exception as e:
+            logger.error(f"Failed to get channel history: {e}")
+            return []
 
 
 def run_slack_bot():

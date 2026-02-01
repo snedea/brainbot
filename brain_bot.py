@@ -65,6 +65,13 @@ from rich.panel import Panel
 from llama_cpp import Llama
 from huggingface_hub import hf_hub_download
 
+# Import LED controller for expressive lighting
+try:
+    from brainbot.hardware.expansion_leds import get_leds, ExpansionLEDs
+    LED_AVAILABLE = True
+except ImportError:
+    LED_AVAILABLE = False
+
 # Constants for our AI model
 MODEL_REPO = "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
 MODEL_FILE = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
@@ -136,6 +143,8 @@ class BrainBotApp(App):
         Binding("ctrl+c", "quit", "Quit", priority=True),
         Binding("ctrl+q", "quit", "Quit"),
         Binding("ctrl+space", "trigger_wake", "Wake"),
+        Binding("ctrl+a", "attention", "Attention"),
+        Binding("ctrl+h", "toggle_happy", "Mood"),
     ]
 
     # Set the app title
@@ -151,6 +160,15 @@ class BrainBotApp(App):
         self.model_path: Optional[Path] = None
         self.is_processing = False
         self.voice_agent = None  # Will be set when voice mode is enabled
+
+        # Initialize LED controller for expressive lighting
+        self.leds: Optional[ExpansionLEDs] = None
+        if LED_AVAILABLE:
+            try:
+                self.leds = get_leds()
+                self.leds.set_mood("idle")
+            except Exception as e:
+                logging.warning(f"LED init failed: {e}")
 
     def compose(self) -> ComposeResult:
         """Build the UI layout."""
@@ -270,6 +288,13 @@ class BrainBotApp(App):
             self.chat_log.write(Text("🎊 BrainBot is ready to chat!", style="bold green"))
             self.chat_log.write("")  # Add spacing
 
+            # Celebrate with LEDs!
+            if self.leds:
+                self.leds.success()
+                import time
+                time.sleep(0.5)
+                self.leds.set_mood("happy")
+
         except Exception as e:
             error_msg = f"❌ Oops! Couldn't load BrainBot: {str(e)}"
             self.chat_log.write(Text(error_msg, style="bold red"))
@@ -294,6 +319,10 @@ class BrainBotApp(App):
         # Clear the input box for the next message
         self.input_box.clear()
 
+        # Acknowledge user input with LED flash
+        if self.leds:
+            self.leds.acknowledge()
+
         # Show the user's message in the chat
         user_text = Text()
         user_text.append("👤 You: ", style="bold green")
@@ -308,6 +337,10 @@ class BrainBotApp(App):
     async def generate_response(self, user_message: str) -> None:
         """Generate AI response in a background worker."""
         self.is_processing = True
+
+        # Set LEDs to thinking mode (rainbow)
+        if self.leds:
+            self.leds.set_mood("thinking")
 
         # Show thinking message
         thinking_msg = Text("🤔 BrainBot is thinking...", style="cyan italic")
@@ -339,6 +372,10 @@ class BrainBotApp(App):
             # Extract the generated text
             bot_response = response['choices'][0]['text'].strip()
 
+            # Set LEDs to speaking mode
+            if self.leds:
+                self.leds.set_mood("speaking")
+
             # Simply add the bot's response (no need to clear)
             # The thinking message will remain visible but that's ok
             bot_text = Text()
@@ -348,8 +385,13 @@ class BrainBotApp(App):
             self.chat_log.write("")  # Add spacing
 
             # Speak the response if TTS is enabled
-            if self.tts_enabled and self.tts_engine and bot_response:
+            if hasattr(self, 'tts_enabled') and self.tts_enabled and self.tts_engine and bot_response:
                 self.speak_text(bot_response)
+            elif self.leds:
+                # If not speaking via TTS, return to idle after a moment
+                import time
+                time.sleep(1.5)
+                self.leds.set_mood("idle")
 
         except Exception as e:
             # Handle any errors
@@ -357,6 +399,13 @@ class BrainBotApp(App):
             error_text.append("❌ Oops! ", style="bold red")
             error_text.append(f"Something went wrong: {str(e)}", style="red")
             self.chat_log.write(error_text)
+
+            # Show error on LEDs
+            if self.leds:
+                self.leds.set_mood("error")
+                import time
+                time.sleep(2)
+                self.leds.set_mood("idle")
 
         finally:
             self.is_processing = False
@@ -380,6 +429,31 @@ class BrainBotApp(App):
                                  style="cyan italic"))
         self.chat_log.write("")  # Add spacing
 
+    def action_attention(self) -> None:
+        """Flash LEDs to test attention-grabbing."""
+        if self.leds:
+            self.leds.set_mood("attention")
+            self.chat_log.write(Text("✨ BrainBot wants your attention!", style="cyan bold"))
+        else:
+            self.chat_log.write(Text("⚠️ LEDs not available.", style="yellow italic"))
+
+    def action_toggle_happy(self) -> None:
+        """Toggle between happy and idle mood."""
+        if not self.leds:
+            self.chat_log.write(Text("⚠️ LEDs not available.", style="yellow italic"))
+            return
+
+        current = self.leds.get_mood()
+        if current == "happy":
+            self.leds.set_mood("idle")
+            self.chat_log.write(Text("😌 BrainBot is calm.", style="cyan"))
+        elif current == "excited":
+            self.leds.set_mood("happy")
+            self.chat_log.write(Text("😊 BrainBot is happy!", style="yellow"))
+        else:
+            self.leds.set_mood("excited")
+            self.chat_log.write(Text("🎉 BrainBot is excited!", style="bold magenta"))
+
 
 class VoiceHooks:
     """
@@ -401,7 +475,7 @@ class VoiceHooks:
 
     def on_state_change(self, state):
         """
-        Update UI based on voice agent state.
+        Update UI and LEDs based on voice agent state.
 
         Args:
             state: VoiceAgentState enum value
@@ -417,8 +491,26 @@ class VoiceHooks:
             VoiceAgentState.ERROR: "❌ Error"
         }
 
+        # Map voice states to LED moods
+        led_moods = {
+            VoiceAgentState.IDLE: "idle",
+            VoiceAgentState.LISTENING: "listening",
+            VoiceAgentState.TRANSCRIBING: "thinking",
+            VoiceAgentState.THINKING: "thinking",
+            VoiceAgentState.SPEAKING: "speaking",
+            VoiceAgentState.ERROR: "error"
+        }
+
         status_text = state_indicators.get(state, "🎤 Ready")
         self.current_state = status_text
+
+        # Update LEDs to match voice state
+        if self.app.leds:
+            led_mood = led_moods.get(state, "idle")
+            try:
+                self.app.leds.set_mood(led_mood)
+            except:
+                pass
 
         # Update voice status widget (thread-safe)
         if hasattr(self.app, 'voice_status'):
@@ -619,6 +711,14 @@ Examples:
             try:
                 voice_agent.stop()
                 print("✅ Voice agent stopped")
+            except:
+                pass
+
+        # Set LEDs to sleeping mode on exit
+        if app.leds:
+            try:
+                app.leds.set_mood("sleeping")
+                print("💤 BrainBot is sleeping...")
             except:
                 pass
 

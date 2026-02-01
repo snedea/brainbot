@@ -68,14 +68,87 @@ class LCD5Inch:
     def _load_fonts(self) -> None:
         """Load fonts for different text sizes."""
         try:
-            font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-            self._font_title = ImageFont.truetype(font_path, 36)
-            self._font_body = ImageFont.truetype(font_path, 20)
-            self._font_small = ImageFont.truetype(font_path, 14)
+            self._font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            # Check if bold exists, fall back to regular
+            import os
+            if not os.path.exists(self._font_path):
+                self._font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+            self._font_title = ImageFont.truetype(self._font_path, 36)
+            self._font_body = ImageFont.truetype(self._font_path, 20)
+            self._font_small = ImageFont.truetype(self._font_path, 14)
         except Exception:
+            self._font_path = None
             self._font_title = ImageFont.load_default()
             self._font_body = ImageFont.load_default()
             self._font_small = ImageFont.load_default()
+
+    def _calculate_optimal_font_size(
+        self,
+        text: str,
+        max_width: int,
+        max_height: int,
+        min_size: int = 24,
+        max_size: int = 120,
+    ) -> Tuple[int, list[str]]:
+        """
+        Calculate the largest font size that fits text in the given area.
+
+        Args:
+            text: Text to display
+            max_width: Maximum width in pixels
+            max_height: Maximum height in pixels
+            min_size: Minimum font size to try
+            max_size: Maximum font size to try
+
+        Returns:
+            Tuple of (font_size, wrapped_lines)
+        """
+        if not self._font_path:
+            return (min_size, [text])
+
+        # Try font sizes from large to small
+        for size in range(max_size, min_size - 1, -4):
+            try:
+                font = ImageFont.truetype(self._font_path, size)
+
+                # Calculate line height (approximately 1.2x font size)
+                line_height = int(size * 1.3)
+
+                # Calculate approximate characters per line
+                # Use a test character to get average width
+                test_bbox = font.getbbox("M")
+                avg_char_width = test_bbox[2] - test_bbox[0]
+                chars_per_line = max(1, int(max_width / avg_char_width))
+
+                # Wrap text
+                wrapped = textwrap.wrap(text, width=chars_per_line)
+
+                # Calculate total height needed
+                total_height = len(wrapped) * line_height
+
+                # Check if it fits
+                if total_height <= max_height:
+                    # Verify width of each line
+                    fits = True
+                    for line in wrapped:
+                        bbox = font.getbbox(line)
+                        if (bbox[2] - bbox[0]) > max_width:
+                            fits = False
+                            break
+
+                    if fits:
+                        return (size, wrapped)
+
+            except Exception:
+                continue
+
+        # Fall back to minimum size
+        font = ImageFont.truetype(self._font_path, min_size)
+        test_bbox = font.getbbox("M")
+        avg_char_width = test_bbox[2] - test_bbox[0]
+        chars_per_line = max(1, int(max_width / avg_char_width))
+        wrapped = textwrap.wrap(text, width=chars_per_line)
+        return (min_size, wrapped)
 
     def display_status(
         self,
@@ -209,10 +282,14 @@ class LCD5Inch:
         self,
         message: str,
         title: Optional[str] = None,
-        color: Tuple[int, int, int] = (200, 200, 200),
+        color: Tuple[int, int, int] = (255, 255, 255),
     ) -> None:
         """
-        Display a simple message.
+        Display a simple message with dynamic font sizing.
+
+        The font size is automatically calculated to be as large as possible
+        while still fitting the text on screen. Short messages get huge fonts,
+        longer messages get smaller fonts.
 
         Args:
             message: Message text
@@ -227,17 +304,52 @@ class LCD5Inch:
             image = Image.new("RGB", (self.width, self.height), color=(20, 20, 30))
             draw = ImageDraw.Draw(image)
 
+            # Calculate available space
+            margin = 40
+            content_width = self.width - (margin * 2)
+
+            # Reserve space for title if present
+            title_height = 0
             if title:
-                draw.text((40, 30), title, font=self._font_title, fill=(100, 200, 255))
+                title_font = ImageFont.truetype(self._font_path, 28) if self._font_path else self._font_title
+                draw.text((margin, 20), title, font=title_font, fill=(100, 200, 255))
+                title_height = 70  # Title + padding
 
-            # Wrap and center message
-            wrapped = self._wrap_text(message, self.width - 80)
-            y = self.height // 2 - (len(wrapped) * 25) // 2
+            # Available height for message
+            content_height = self.height - title_height - (margin * 2)
+            content_top = title_height + margin
 
-            for line in wrapped:
-                draw.text((40, y), line, font=self._font_body, fill=color)
-                y += 25
+            # Calculate optimal font size for the message
+            font_size, wrapped_lines = self._calculate_optimal_font_size(
+                message,
+                max_width=content_width,
+                max_height=content_height,
+                min_size=24,
+                max_size=140,  # Allow really big fonts for short messages
+            )
 
+            # Load the calculated font
+            if self._font_path:
+                message_font = ImageFont.truetype(self._font_path, font_size)
+            else:
+                message_font = self._font_body
+
+            # Calculate line height
+            line_height = int(font_size * 1.3)
+
+            # Calculate total text height and center vertically
+            total_text_height = len(wrapped_lines) * line_height
+            start_y = content_top + (content_height - total_text_height) // 2
+
+            # Draw each line, centered horizontally
+            for i, line in enumerate(wrapped_lines):
+                bbox = message_font.getbbox(line)
+                line_width = bbox[2] - bbox[0]
+                x = (self.width - line_width) // 2  # Center horizontally
+                y = start_y + (i * line_height)
+                draw.text((x, y), line, font=message_font, fill=color)
+
+            logger.debug(f"Displaying message with font size {font_size}px, {len(wrapped_lines)} lines")
             self._render_image(image)
 
         except Exception as e:
@@ -259,19 +371,48 @@ class LCD5Inch:
 
     def _render_image(self, image: "Image") -> None:
         """
-        Render an image to the display.
+        Render an image to the display via framebuffer.
 
-        This is a placeholder - actual implementation depends on display type.
+        Writes directly to /dev/fb0 (DSI display) if available.
         """
-        # In a real implementation, this would send the image to the hardware
-        # For now, we could save it for debugging
+        # Save debug image
         try:
-            # Save to temp file for debugging
             debug_path = "/tmp/brainbot_lcd5inch_debug.png"
             image.save(debug_path)
             logger.debug(f"LCD5Inch image saved to {debug_path}")
         except Exception as e:
             logger.debug(f"Could not save debug image: {e}")
+
+        # Try to render to framebuffer
+        try:
+            import os
+            fb_path = "/dev/fb0"
+            if os.path.exists(fb_path):
+                # Convert to RGB and resize to framebuffer size if needed
+                rgb_image = image.convert("RGB")
+
+                # Get framebuffer info
+                with open("/sys/class/graphics/fb0/virtual_size", "r") as f:
+                    fb_size = f.read().strip().split(",")
+                    fb_width, fb_height = int(fb_size[0]), int(fb_size[1])
+
+                # Resize image to fit framebuffer
+                if rgb_image.size != (fb_width, fb_height):
+                    rgb_image = rgb_image.resize((fb_width, fb_height), Image.LANCZOS)
+
+                # Convert to BGRA for framebuffer (32-bit)
+                rgba_image = rgb_image.convert("RGBA")
+                # Swap R and B channels for BGR format
+                r, g, b, a = rgba_image.split()
+                bgra_image = Image.merge("RGBA", (b, g, r, a))
+
+                # Write to framebuffer
+                with open(fb_path, "wb") as fb:
+                    fb.write(bgra_image.tobytes())
+
+                logger.info("LCD5Inch rendered to framebuffer")
+        except Exception as e:
+            logger.warning(f"Could not render to framebuffer: {e}")
 
     def is_available(self) -> bool:
         """Check if the display is available."""

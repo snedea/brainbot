@@ -24,6 +24,7 @@ from .node_id import NodeIdManager
 from .hardware_scanner import HardwareScanner
 from .persona import PersonaGenerator
 from .intent_detector import IntentDetector, DetectedIntent, IntentType, detect_intent
+from .slack_network import SlackNetworkBot, get_slack_network
 
 __all__ = [
     # Models
@@ -46,4 +47,7 @@ __all__ = [
     "DetectedIntent",
     "IntentType",
     "detect_intent",
+    # Slack Network
+    "SlackNetworkBot",
+    "get_slack_network",
 ]
