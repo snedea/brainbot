@@ -745,45 +745,59 @@ async def main():
     parser.add_argument("--persona", type=str, default="Player", help="Your name")
     parser.add_argument("--duration", type=float, default=300, help="Max duration")
     parser.add_argument("--difficulty", type=float, default=0.7, help="AI difficulty")
+    parser.add_argument("--loop", action="store_true", help="Loop games continuously")
     args = parser.parse_args()
 
-    node_id = str(uuid.uuid4())
+    game_number = 0
+    while True:
+        game_number += 1
+        node_id = str(uuid.uuid4())
 
-    if args.host:
-        print(f"Hosting NetPong game as {args.persona}")
-        print(f"Port: {args.port}")
-        print("Waiting for player to connect...")
+        if args.host:
+            print(f"\n{'='*40}")
+            print(f"Game #{game_number}")
+            print(f"Hosting NetPong game as {args.persona}")
+            print(f"Port: {args.port}")
+            print("Waiting for player to connect...")
+            print()
+
+            result = await host_game(
+                node_id=node_id,
+                persona=args.persona,
+                port=args.port,
+                max_duration=args.duration,
+                difficulty=args.difficulty,
+            )
+        elif args.join:
+            print(f"\n{'='*40}")
+            print(f"Game #{game_number}")
+            print(f"Joining NetPong game at {args.join}")
+            print(f"Playing as: {args.persona}")
+            print()
+
+            result = await join_game(
+                node_id=node_id,
+                persona=args.persona,
+                host_address=args.join,
+                port=args.port,
+                max_duration=args.duration,
+            )
+        else:
+            print("Use --host to host a game or --join <address> to join")
+            return
+
         print()
+        print("=" * 40)
+        print(f"Game Over!")
+        print(f"Winner: {result.get('winner', 'Unknown')}")
+        print(f"Score: {result.get('left_score', 0)} - {result.get('right_score', 0)}")
+        print(f"Max Rally: {result.get('max_rally', 0)}")
 
-        result = await host_game(
-            node_id=node_id,
-            persona=args.persona,
-            port=args.port,
-            max_duration=args.duration,
-            difficulty=args.difficulty,
-        )
-    elif args.join:
-        print(f"Joining NetPong game at {args.join}")
-        print(f"Playing as: {args.persona}")
-        print()
+        if not args.loop:
+            break
 
-        result = await join_game(
-            node_id=node_id,
-            persona=args.persona,
-            host_address=args.join,
-            port=args.port,
-            max_duration=args.duration,
-        )
-    else:
-        print("Use --host to host a game or --join <address> to join")
-        return
-
-    print()
-    print("=" * 40)
-    print(f"Game Over!")
-    print(f"Winner: {result.get('winner', 'Unknown')}")
-    print(f"Score: {result.get('left_score', 0)} - {result.get('right_score', 0)}")
-    print(f"Max Rally: {result.get('max_rally', 0)}")
+        print("\nStarting next game in 3 seconds...")
+        await asyncio.sleep(3)
 
 
 if __name__ == "__main__":
