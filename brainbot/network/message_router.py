@@ -1,9 +1,10 @@
 """Smart message routing for multi-node BrainBot network.
 
 Routes messages to the appropriate node based on:
-1. Explicit node name in message ("Echo, turn on the LEDs")
-2. Capability requirements ("turn on the LEDs" -> needs LED_STRIP)
-3. Default to local node for general chat
+1. LLM-based intent detection (primary - understands context)
+2. Explicit node name in message ("Echo, turn on the LEDs")
+3. Capability requirements (fallback regex matching)
+4. Default to local node for general chat
 """
 
 import logging
@@ -13,6 +14,7 @@ from typing import Optional, TYPE_CHECKING
 
 from .models import HardwareCapability, NetworkTask
 from .registry import NodeRegistry
+from .intent_detector import IntentDetector, DetectedIntent, IntentType
 
 if TYPE_CHECKING:
     from .task_router import TaskRouter, TaskSubmitter
@@ -50,10 +52,13 @@ CAPABILITY_KEYWORDS = {
         r"\bmicrophone\b", r"\bmic\b", r"\bstt\b", r"\bspeech.to.text\b",
     ],
 
-    # Camera-related
+    # Camera-related (require capture verbs - not just "picture" which could mean display)
     HardwareCapability.CAMERA_PI: [
-        r"\bcamera\b", r"\bphoto\b", r"\bpicture\b", r"\bsnapshot\b",
-        r"\bcapture\b", r"\bsee\b", r"\blook\b", r"\bwatch\b",
+        r"\bcamera\b", r"\bsnapshot\b",
+        r"\b(take|capture|snap)\s+(a\s+)?(photo|picture)\b",  # "take a photo", "capture picture"
+        r"\b(photo|picture)\s+(of|from)\b",  # "photo of", "picture from"
+        r"\bsee\s+(me|yourself|what)\b",  # "see me", "see what's there"
+        r"\blook\s+at\s+(me|the)\b",  # "look at me"
     ],
     HardwareCapability.CAMERA_USB: [
         r"\bwebcam\b", r"\busb\s*camera\b",
@@ -155,9 +160,10 @@ class MessageRouter:
     Analyzes messages and decides where to route them.
 
     Priority:
-    1. Explicit node name -> route to that node
-    2. Capability keywords -> route to capable node
-    3. No special routing -> handle locally
+    1. LLM intent detection (understands context and nuance)
+    2. Explicit node name -> route to that node
+    3. Capability keywords -> route to capable node (fallback)
+    4. No special routing -> handle locally
     """
 
     def __init__(
@@ -165,6 +171,7 @@ class MessageRouter:
         registry: NodeRegistry,
         local_node_id: str,
         local_persona_name: str,
+        use_intent_detection: bool = True,
     ):
         """
         Initialize message router.
@@ -173,10 +180,17 @@ class MessageRouter:
             registry: Node registry for looking up nodes
             local_node_id: This node's ID
             local_persona_name: This node's persona name (e.g., "Creative Unit")
+            use_intent_detection: If True, use Claude CLI for intent detection
         """
         self.registry = registry
         self.local_node_id = local_node_id
         self.local_persona_name = local_persona_name
+        self.use_intent_detection = use_intent_detection
+
+        # Intent detector (Claude CLI based)
+        self._intent_detector: Optional[IntentDetector] = None
+        if use_intent_detection:
+            self._intent_detector = IntentDetector()
 
         # Build node name lookup (cached, refreshed periodically)
         self._node_name_cache: dict[str, str] = {}  # name -> node_id
@@ -195,17 +209,23 @@ class MessageRouter:
         # Refresh node cache periodically
         self._maybe_refresh_cache()
 
-        # Step 1: Check for explicit node name
+        # Step 1: Try LLM-based intent detection (primary method)
+        if self._intent_detector:
+            intent_result = self._route_by_intent(message)
+            if intent_result:
+                return intent_result
+
+        # Step 2: Check for explicit node name (fallback)
         explicit_result = self._check_explicit_node(message)
         if explicit_result:
             return explicit_result
 
-        # Step 2: Check for capability keywords
+        # Step 3: Check for capability keywords (fallback)
         capability_result = self._check_capability_keywords(message)
         if capability_result:
             return capability_result
 
-        # Step 3: Default to local handling
+        # Step 4: Default to local handling
         return RoutingDecision(
             target_node_id=self.local_node_id,
             target_node_name=self.local_persona_name,
@@ -213,6 +233,180 @@ class MessageRouter:
             cleaned_message=message,
             message="Handling locally",
         )
+
+    def _route_by_intent(self, message: str) -> Optional[RoutingDecision]:
+        """
+        Route based on LLM intent detection.
+
+        Args:
+            message: User message
+
+        Returns:
+            RoutingDecision or None if intent detection fails/inconclusive
+        """
+        try:
+            # Get available nodes for context
+            available_nodes = []
+            for node in self.registry.get_online_nodes():
+                available_nodes.append({
+                    "name": node.persona.display_name if node.persona else node.hostname,
+                    "capabilities": node.capabilities,
+                })
+
+            # Detect intent
+            intent = self._intent_detector.detect(message, available_nodes)
+            logger.debug(f"Detected intent: {intent.intent_type} (confidence: {intent.confidence})")
+
+            # Low confidence - fall back to regex
+            if intent.confidence < 0.6:
+                logger.debug(f"Low confidence ({intent.confidence}), falling back to regex")
+                return None
+
+            # Conversational - handle locally
+            if intent.is_conversational:
+                return RoutingDecision(
+                    target_node_id=self.local_node_id,
+                    target_node_name=self.local_persona_name,
+                    route_type="local",
+                    cleaned_message=message,
+                    message=f"Conversational intent: {intent.reasoning}",
+                )
+
+            # Explicit node targeting
+            if intent.target_node_name:
+                target_node_name = intent.target_node_name
+                target_node_id = self._node_name_cache.get(target_node_name)
+                if not target_node_id:
+                    # Try case-insensitive match
+                    for name, node_id in self._node_name_cache.items():
+                        if name.lower() == target_node_name.lower():
+                            target_node_id = node_id
+                            target_node_name = name
+                            break
+
+                if target_node_id:
+                    if target_node_id == self.local_node_id:
+                        return RoutingDecision(
+                            target_node_id=self.local_node_id,
+                            target_node_name=self.local_persona_name,
+                            route_type="local",
+                            cleaned_message=message,
+                            message=f"Targeting self ({target_node_name})",
+                        )
+                    return RoutingDecision(
+                        target_node_id=target_node_id,
+                        target_node_name=target_node_name,
+                        route_type="explicit",
+                        cleaned_message=message,
+                        task_type="delegate_chat",
+                        task_payload={"message": message},
+                        message=f"Routing to {target_node_name} (explicit via intent)",
+                    )
+
+            # Hardware command - find capable node
+            if intent.is_hardware_command and intent.required_capabilities:
+                # Check if local node can handle it
+                local_entry = self.registry.get_node(self.local_node_id)
+                if local_entry:
+                    local_caps = set(local_entry.capabilities)
+                    required_cap_values = {c.value for c in intent.required_capabilities}
+
+                    if required_cap_values.issubset(local_caps):
+                        return RoutingDecision(
+                            target_node_id=self.local_node_id,
+                            target_node_name=self.local_persona_name,
+                            route_type="local",
+                            required_capabilities=intent.required_capabilities,
+                            cleaned_message=message,
+                            message=f"Local node has required capabilities (intent: {intent.intent_type})",
+                        )
+
+                # Find remote node with capabilities
+                capable_nodes = self.registry.find_nodes_with_capabilities(
+                    intent.required_capabilities,
+                    require_all=True,
+                    only_online=True,
+                )
+
+                if not capable_nodes:
+                    cap_names = [c.value for c in intent.required_capabilities]
+                    return RoutingDecision(
+                        route_type="error",
+                        required_capabilities=intent.required_capabilities,
+                        cleaned_message=message,
+                        message=f"No online nodes have required capabilities: {cap_names}",
+                    )
+
+                target = capable_nodes[0]
+                target_name = target.persona.display_name if target.persona else target.node_id[:8]
+
+                # Determine task type from intent
+                task_type = self._intent_to_task_type(intent)
+
+                return RoutingDecision(
+                    target_node_id=target.node_id,
+                    target_node_name=target_name,
+                    route_type="capability",
+                    required_capabilities=intent.required_capabilities,
+                    cleaned_message=message,
+                    task_type=task_type,
+                    task_payload={"message": message, "intent": intent.intent_type.value},
+                    message=f"Routing to {target_name} for {intent.intent_type.value}",
+                )
+
+            # AI generation tasks - prefer GPU nodes but can run anywhere
+            if intent.intent_type in {IntentType.GENERATE_IMAGE, IntentType.GENERATE_TEXT}:
+                # Try to find a GPU node
+                gpu_caps = [
+                    HardwareCapability.GPU_CUDA,
+                    HardwareCapability.GPU_METAL,
+                    HardwareCapability.GPU_ROCM,
+                ]
+                for gpu_cap in gpu_caps:
+                    gpu_nodes = self.registry.find_nodes_with_capability(gpu_cap, only_online=True)
+                    if gpu_nodes:
+                        target = gpu_nodes[0]
+                        target_name = target.persona.display_name if target.persona else target.node_id[:8]
+                        return RoutingDecision(
+                            target_node_id=target.node_id,
+                            target_node_name=target_name,
+                            route_type="capability",
+                            preferred_capabilities=[gpu_cap],
+                            cleaned_message=message,
+                            task_type="generate_image" if intent.intent_type == IntentType.GENERATE_IMAGE else "generate_text",
+                            task_payload={"message": message},
+                            message=f"Routing to {target_name} (has {gpu_cap.value})",
+                        )
+
+                # No GPU nodes - handle locally
+                return RoutingDecision(
+                    target_node_id=self.local_node_id,
+                    target_node_name=self.local_persona_name,
+                    route_type="local",
+                    cleaned_message=message,
+                    message=f"Handling {intent.intent_type.value} locally (no GPU nodes available)",
+                )
+
+            # Unknown or unhandled intent - let regex fallback handle it
+            return None
+
+        except Exception as e:
+            logger.warning(f"Intent detection error: {e}, falling back to regex")
+            return None
+
+    def _intent_to_task_type(self, intent: DetectedIntent) -> str:
+        """Map intent type to task type string."""
+        mapping = {
+            IntentType.DISPLAY_CONTENT: "display_text",
+            IntentType.CAPTURE_IMAGE: "photo",
+            IntentType.CONTROL_LIGHTING: "led_mood",
+            IntentType.CONTROL_AUDIO: "speak",
+            IntentType.CONTROL_HARDWARE: "hardware_control",
+            IntentType.GENERATE_IMAGE: "generate_image",
+            IntentType.GENERATE_TEXT: "generate_text",
+            IntentType.ANALYZE_IMAGE: "analyze_image",
+        }
+        return mapping.get(intent.intent_type, "delegate_chat")
 
     def _check_explicit_node(self, message: str) -> Optional[RoutingDecision]:
         """Check if message explicitly mentions a node name."""

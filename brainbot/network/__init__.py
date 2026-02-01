@@ -5,6 +5,7 @@ Enables BrainBot nodes to:
 - Share a unified brain via cloud storage (R2/S3)
 - Route tasks to capable nodes
 - Enforce safety policies on sensitive capabilities
+- Detect user intent using LLM for smart routing
 """
 
 from .models import (
@@ -22,6 +23,7 @@ from .models import (
 from .node_id import NodeIdManager
 from .hardware_scanner import HardwareScanner
 from .persona import PersonaGenerator
+from .intent_detector import IntentDetector, DetectedIntent, IntentType, detect_intent
 
 __all__ = [
     # Models
@@ -39,4 +41,9 @@ __all__ = [
     "NodeIdManager",
     "HardwareScanner",
     "PersonaGenerator",
+    # Intent Detection
+    "IntentDetector",
+    "DetectedIntent",
+    "IntentType",
+    "detect_intent",
 ]
