@@ -300,13 +300,22 @@ Format as a journal entry with today's date."""
             import pwd
             env["HOME"] = pwd.getpwuid(os.getuid()).pw_dir
 
-        # Ensure npm-global bin is in PATH (where claude CLI is installed)
         home = env.get("HOME", "/home/brainbot")
-        npm_bin = f"{home}/.npm-global/bin"
         current_path = env.get("PATH", "")
-        if npm_bin not in current_path:
-            env["PATH"] = f"{npm_bin}:{current_path}"
 
+        # Add common Claude CLI locations to PATH
+        extra_paths = [
+            f"{home}/.npm-global/bin",  # npm global (Linux)
+            "/opt/homebrew/bin",         # Homebrew (Mac ARM)
+            "/usr/local/bin",            # Homebrew (Mac Intel) / Linux
+            f"{home}/.local/bin",        # pipx / user installs
+        ]
+
+        for path in extra_paths:
+            if path not in current_path:
+                current_path = f"{path}:{current_path}"
+
+        env["PATH"] = current_path
         return env
 
     def quick_query(
