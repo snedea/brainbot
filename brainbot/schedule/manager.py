@@ -43,6 +43,7 @@ class ScheduleManager:
         on_bedtime_story: Optional[Callable] = None,
         on_evening_reflection: Optional[Callable] = None,
         on_sleep: Optional[Callable] = None,
+        on_daily_digest: Optional[Callable] = None,
     ):
         """
         Initialize schedule manager.
@@ -55,6 +56,7 @@ class ScheduleManager:
             on_bedtime_story: Callback for bedtime story time
             on_evening_reflection: Callback for evening reflection
             on_sleep: Callback for sleep time
+            on_daily_digest: Callback for daily digest email
         """
         self.settings = settings
         self.state_manager = state_manager
@@ -66,6 +68,7 @@ class ScheduleManager:
         self.on_bedtime_story = on_bedtime_story
         self.on_evening_reflection = on_evening_reflection
         self.on_sleep = on_sleep
+        self.on_daily_digest = on_daily_digest
 
         # Scheduler
         self.scheduler = BackgroundScheduler(timezone=self.tz)
@@ -134,9 +137,49 @@ class ScheduleManager:
         )
         logger.info(f"Scheduled sleep at {sleep_time.strftime('%H:%M')} Central")
 
+        # Daily digest job (from email config)
+        self._schedule_daily_digest()
+
         self.scheduler.start()
         self._running = True
         logger.info("Schedule manager started")
+
+    def _schedule_daily_digest(self) -> None:
+        """Schedule the daily digest email job."""
+        try:
+            from ..integrations.email import EmailConfigManager
+
+            email_manager = EmailConfigManager(self.settings.config_dir)
+            email_config = email_manager.load()
+
+            if email_config.is_configured and email_config.digest_time:
+                # Parse digest time (HH:MM format)
+                parts = email_config.digest_time.split(":")
+                hour = int(parts[0])
+                minute = int(parts[1]) if len(parts) > 1 else 0
+
+                self.scheduler.add_job(
+                    self._handle_daily_digest,
+                    CronTrigger(hour=hour, minute=minute, timezone=self.tz),
+                    id="daily_digest",
+                    name="Daily Digest Email",
+                    replace_existing=True,
+                )
+                logger.info(f"Scheduled daily digest at {email_config.digest_time} Central")
+            else:
+                logger.debug("Daily digest not configured, skipping schedule")
+
+        except Exception as e:
+            logger.warning(f"Could not schedule daily digest: {e}")
+
+    def _handle_daily_digest(self) -> None:
+        """Handle the daily digest scheduled event."""
+        logger.info("Daily digest time!")
+        if self.on_daily_digest:
+            try:
+                self.on_daily_digest()
+            except Exception as e:
+                logger.error(f"Daily digest callback error: {e}")
 
     def stop(self) -> None:
         """Stop the scheduler."""

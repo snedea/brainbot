@@ -132,6 +132,18 @@ class MemoryStore:
                 )
             """)
 
+            # Memory file sync tracking (for distributed network)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS memory_file_sync (
+                    filename TEXT PRIMARY KEY,
+                    local_hash TEXT NOT NULL,
+                    cloud_hash TEXT,
+                    last_sync TEXT,
+                    origin_node TEXT NOT NULL,
+                    sync_status TEXT DEFAULT 'pending'
+                )
+            """)
+
             conn.commit()
             logger.info(f"Database initialized at {self.db_path}")
 
@@ -539,3 +551,113 @@ class MemoryStore:
                     r["tags"] = json.loads(r["tags"])
                 results.append(r)
             return results
+
+    # ============ Memory File Sync Tracking ============
+
+    def upsert_sync_entry(
+        self,
+        filename: str,
+        local_hash: str,
+        origin_node: str,
+        cloud_hash: Optional[str] = None,
+        sync_status: str = "pending",
+    ) -> bool:
+        """
+        Insert or update a sync tracking entry.
+
+        Args:
+            filename: Name of the memory file
+            local_hash: Hash of local file content
+            origin_node: Node ID that created/owns this file
+            cloud_hash: Hash of cloud version (if synced)
+            sync_status: Status (pending, synced, conflict, local_only, cloud_only)
+
+        Returns:
+            True if successful
+        """
+        now = datetime.now().isoformat()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO memory_file_sync
+                    (filename, local_hash, cloud_hash, last_sync, origin_node, sync_status)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(filename) DO UPDATE SET
+                    local_hash = excluded.local_hash,
+                    cloud_hash = excluded.cloud_hash,
+                    last_sync = excluded.last_sync,
+                    sync_status = excluded.sync_status
+                """,
+                (filename, local_hash, cloud_hash, now, origin_node, sync_status),
+            )
+            conn.commit()
+            return True
+
+    def get_sync_entry(self, filename: str) -> Optional[dict]:
+        """Get sync tracking entry for a file."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM memory_file_sync WHERE filename = ?",
+                (filename,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_pending_syncs(self) -> list[dict]:
+        """Get files that need to be synced."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM memory_file_sync WHERE sync_status IN ('pending', 'conflict') ORDER BY last_sync",
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_all_sync_entries(self) -> list[dict]:
+        """Get all sync tracking entries."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM memory_file_sync ORDER BY filename",
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def mark_synced(
+        self,
+        filename: str,
+        cloud_hash: str,
+    ) -> bool:
+        """Mark a file as synced with the given cloud hash."""
+        now = datetime.now().isoformat()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE memory_file_sync
+                SET cloud_hash = ?, last_sync = ?, sync_status = 'synced'
+                WHERE filename = ?
+                """,
+                (cloud_hash, now, filename),
+            )
+            conn.commit()
+            return True
+
+    def mark_conflict(self, filename: str) -> bool:
+        """Mark a file as having a conflict."""
+        now = datetime.now().isoformat()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE memory_file_sync
+                SET last_sync = ?, sync_status = 'conflict'
+                WHERE filename = ?
+                """,
+                (now, filename),
+            )
+            conn.commit()
+            return True
+
+    def delete_sync_entry(self, filename: str) -> bool:
+        """Delete a sync tracking entry."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "DELETE FROM memory_file_sync WHERE filename = ?",
+                (filename,),
+            )
+            conn.commit()
+            return True

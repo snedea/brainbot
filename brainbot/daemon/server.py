@@ -40,6 +40,28 @@ except ImportError:
     SLACK_AVAILABLE = False
     SlackBot = None
 
+# Optional Email integration
+try:
+    from ..integrations.email import EmailDaemon, EmailConfigManager
+    EMAIL_AVAILABLE = True
+except ImportError:
+    EMAIL_AVAILABLE = False
+    EmailDaemon = None
+    EmailConfigManager = None
+
+# Optional network/distributed features
+try:
+    from ..network.sync_daemon import SyncDaemon
+    from ..network.storage import CloudStorageConfig
+    from ..network import NodeIdManager, HardwareScanner, PersonaGenerator
+    from ..network.task_queue import TaskQueue
+    from ..network.task_executor import TaskExecutor
+    from ..network.event_log import EventLog
+    NETWORK_AVAILABLE = True
+except ImportError:
+    NETWORK_AVAILABLE = False
+    SyncDaemon = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -101,7 +123,10 @@ class BrainBotDaemon:
         # Slack bot (if configured)
         self.slack_bot: Optional["SlackBot"] = None
 
-        # Shared conversation history (terminal + Slack unified)
+        # Email daemon (if configured)
+        self.email_daemon: Optional["EmailDaemon"] = None
+
+        # Shared conversation history (terminal + Slack + email unified)
         self._conversation_history: list[dict] = []
 
         # Runtime state
@@ -114,6 +139,13 @@ class BrainBotDaemon:
 
         # Status pipe for daemonization
         self._status_pipe: Optional[int] = None
+
+        # Network/distributed features
+        self._sync_daemon: Optional["SyncDaemon"] = None
+        self._task_executor: Optional["TaskExecutor"] = None
+        self._node_id: Optional[str] = None
+        self._manifest = None
+        self._persona = None
 
     def _init_claude_md(self) -> None:
         """Initialize CLAUDE.md file if it doesn't exist."""
@@ -439,6 +471,7 @@ class BrainBotDaemon:
             on_bedtime_story=self._on_bedtime_story,
             on_evening_reflection=self._on_evening_reflection,
             on_sleep=self._on_sleep,
+            on_daily_digest=self._on_daily_digest,
         )
         self.schedule_manager.start()
 
@@ -453,6 +486,9 @@ class BrainBotDaemon:
         )
         self._watchdog.start()
 
+        # Initialize network/distributed features if configured
+        self._start_network()
+
         self.running = True
 
         logger.info(f"BrainBot daemon started (PID {os.getpid()})")
@@ -462,10 +498,14 @@ class BrainBotDaemon:
             self._start_terminal()
             # Start Slack bot if configured (runs in background thread)
             self._start_slack()
+            # Start email daemon if configured
+            self._start_email()
         else:
             logger.info("Running in background")
             # Start Slack bot if configured
             self._start_slack()
+            # Start email daemon if configured
+            self._start_email()
 
         # Report success to parent
         self._report_status(True)
@@ -488,6 +528,12 @@ class BrainBotDaemon:
 
         # Stop Slack bot
         self._stop_slack()
+
+        # Stop email daemon
+        self._stop_email()
+
+        # Stop network sync daemon
+        self._stop_network()
 
         # Cancel any active delegations
         if self.delegator:
@@ -593,6 +639,9 @@ class BrainBotDaemon:
             memories = self.brain.get_active_memories()
             if memories:
                 logger.debug(f"Active memories: {len(memories)}, most recent: {memories[0].name}")
+
+        # Poll and execute network tasks if available
+        self._poll_network_tasks()
 
     def _story_tick(self) -> None:
         """Bedtime story writing - check if story is done."""
@@ -913,6 +962,208 @@ Write as a journal entry with today's date:
             self.slack_bot = None
             logger.debug("Slack bot stopped")
 
+    def _start_email(self) -> None:
+        """Start email daemon if configured."""
+        if not EMAIL_AVAILABLE:
+            return
+
+        try:
+            email_manager = EmailConfigManager(self.settings.config_dir)
+            email_config = email_manager.load()
+
+            if not email_config.is_configured:
+                logger.debug("Email not configured, skipping email daemon")
+                return
+
+            self.email_daemon = EmailDaemon(
+                config=email_config,
+                memory_store=self.memory_store,
+                state_manager=self.state_manager,
+                on_reply_received=self._on_email_reply,
+            )
+
+            if self.email_daemon.start():
+                logger.info("Email daemon started - replies will be processed")
+            else:
+                logger.debug("Email daemon started (no IMAP configured for replies)")
+
+        except Exception as e:
+            logger.error(f"Failed to start email daemon: {e}")
+            self.email_daemon = None
+
+    def _stop_email(self) -> None:
+        """Stop email daemon."""
+        if self.email_daemon:
+            self.email_daemon.stop()
+            self.email_daemon = None
+            logger.debug("Email daemon stopped")
+
+    def _on_daily_digest(self) -> None:
+        """Called when it's time to send the daily digest email."""
+        logger.info("Time to send daily digest!")
+
+        if not self.email_daemon:
+            logger.warning("Email daemon not running, cannot send digest")
+            return
+
+        try:
+            result = self.email_daemon.send_digest_now()
+            if result.get("success"):
+                logger.info(f"Daily digest sent to {result.get('to')}")
+            else:
+                logger.error(f"Daily digest failed: {result.get('error')}")
+        except Exception as e:
+            logger.error(f"Daily digest error: {e}")
+
+    def _on_email_reply(self, from_addr: str, subject: str, body: str, message_id: str = "") -> Optional[str]:
+        """
+        Handle an email reply from the user.
+
+        Args:
+            from_addr: Sender email address
+            subject: Email subject
+            body: Email body (with quoted text stripped)
+            message_id: Original message ID for threading
+
+        Returns:
+            Response to send back (if any)
+        """
+        logger.info(f"Email reply from {from_addr}: {subject}")
+
+        # Extract email address from "Name <email>" format
+        import re
+        email_match = re.search(r'<([^>]+)>', from_addr)
+        reply_to_email = email_match.group(1) if email_match else from_addr
+
+        # Treat email body as a chat message
+        response = self._handle_chat(body, source="email")
+
+        # Send response email back to the sender
+        if response and self.email_daemon:
+            try:
+                # Build reply subject
+                reply_subject = subject
+                if not reply_subject.lower().startswith("re:"):
+                    reply_subject = f"Re: {subject}"
+
+                # Send response to the actual sender with threading headers
+                result = self.email_daemon.email.send_email(
+                    subject=reply_subject,
+                    html_body=f"""
+                    <div style="font-family: sans-serif; padding: 20px;">
+                        <p>{response}</p>
+                        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+                        <p style="color: #888; font-size: 12px;">Reply to continue the conversation!</p>
+                    </div>
+                    """,
+                    text_body=response,
+                    to_email=reply_to_email,
+                    in_reply_to=message_id,
+                )
+
+                if result.get("success"):
+                    logger.info(f"Email response sent to {reply_to_email}")
+                else:
+                    logger.error(f"Failed to send email response: {result.get('error')}")
+
+            except Exception as e:
+                logger.error(f"Error sending email response: {e}")
+
+        return response
+
+    # Network/Distributed Methods
+
+    def _start_network(self) -> None:
+        """Start network sync daemon if configured."""
+        if not NETWORK_AVAILABLE:
+            logger.debug("Network features not available")
+            return
+
+        if not self.settings.network.enabled:
+            logger.debug("Network not enabled in config")
+            return
+
+        try:
+            # Initialize node identity
+            node_id_mgr = NodeIdManager(self.settings.config_dir)
+            identity = node_id_mgr.get_identity()
+            self._node_id = identity.node_id
+
+            # Scan hardware
+            hw_config = self.settings.hardware.model_dump() if self.settings.hardware else {}
+            scanner = HardwareScanner(hw_config)
+            self._manifest = scanner.scan()
+
+            # Generate/load persona
+            persona_gen = PersonaGenerator(self.settings.config_dir)
+            self._persona = persona_gen.generate(self._manifest, identity.hostname)
+
+            # Create storage config
+            storage_config = CloudStorageConfig(
+                r2_account_id=self.settings.network.r2_account_id,
+                r2_access_key_id=self.settings.network.r2_access_key_id,
+                r2_secret_access_key=self.settings.network.r2_secret_access_key,
+                r2_bucket=self.settings.network.r2_bucket,
+            )
+
+            if not storage_config.is_configured:
+                logger.warning("R2 credentials not configured, network disabled")
+                return
+
+            # Start sync daemon
+            self._sync_daemon = SyncDaemon(
+                storage_config=storage_config,
+                node_id=self._node_id,
+                hostname=identity.hostname,
+                persona=self._persona,
+                manifest=self._manifest,
+                brain_dir=self.settings.brain_dir,
+                heartbeat_interval=self.settings.network.heartbeat_interval_seconds,
+                sync_interval=self.settings.network.sync_interval_seconds,
+                on_task_received=self._on_network_task,
+            )
+
+            if self._sync_daemon.start():
+                logger.info(f"Network sync daemon started as '{self._persona.display_name}'")
+
+                # Initialize task executor
+                from ..network.storage import StorageClient
+                storage = StorageClient(storage_config)
+                event_log = EventLog(storage, self._node_id)
+                task_queue = TaskQueue(storage, event_log, self._node_id)
+                self._task_executor = TaskExecutor(task_queue, self._manifest)
+            else:
+                logger.warning("Failed to start network sync daemon")
+                self._sync_daemon = None
+
+        except Exception as e:
+            logger.error(f"Failed to initialize network features: {e}")
+            self._sync_daemon = None
+
+    def _stop_network(self) -> None:
+        """Stop network sync daemon."""
+        if self._sync_daemon:
+            self._sync_daemon.stop()
+            self._sync_daemon = None
+            logger.debug("Network sync daemon stopped")
+
+    def _on_network_task(self, task_data: dict) -> None:
+        """Handle a task received from the network."""
+        logger.info(f"Received network task: {task_data.get('task_type')}")
+        # Task will be polled and executed in the active tick
+
+    def _poll_network_tasks(self) -> None:
+        """Poll and execute network tasks."""
+        if self._task_executor is None:
+            return
+
+        try:
+            executed = self._task_executor.poll_and_execute(limit=1)
+            if executed > 0:
+                logger.debug(f"Executed {executed} network task(s)")
+        except Exception as e:
+            logger.error(f"Error polling network tasks: {e}")
+
     def _handle_chat(self, message: str, source: str = "terminal") -> str:
         """
         Handle a chat message from terminal or Slack.
@@ -953,7 +1204,7 @@ You have a warm, curious personality. You love learning new things, creating pro
 and writing bedtime stories. You maintain memories in markdown files.
 Keep responses concise but engaging. Be appropriate for all ages (PG-13 content only).
 You can reference your memories and what you've been working on.
-You can be reached via terminal or Slack - you're the same BrainBot either way!"""
+You can be reached via terminal, Slack, or email - you're the same BrainBot either way!"""
 
         context_update = f"""Current state:
 - Mood: {state.mood.value}

@@ -84,6 +84,40 @@ class HardwareConfig(BaseModel):
     fan: FanConfig = Field(default_factory=FanConfig)
 
 
+class NetworkConfig(BaseModel):
+    """Network/distributed configuration."""
+    enabled: bool = False
+
+    # R2 (primary storage - Cloudflare edge)
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = "brainbot-network"
+
+    # S3 (backup storage - cold backup)
+    s3_bucket: str = "brainbot-backup"
+    s3_region: str = "us-east-1"
+    s3_access_key_id: str = ""  # If empty, uses R2 credentials
+    s3_secret_access_key: str = ""  # If empty, uses R2 credentials
+
+    # Sync intervals
+    heartbeat_interval_seconds: int = 60
+    sync_interval_seconds: int = 300
+
+    @property
+    def s3_configured(self) -> bool:
+        """Check if S3 is configured (at least bucket specified)."""
+        return bool(self.s3_bucket)
+
+    def get_s3_access_key(self) -> str:
+        """Get S3 access key (falls back to R2 if not specified)."""
+        return self.s3_access_key_id or self.r2_access_key_id
+
+    def get_s3_secret_key(self) -> str:
+        """Get S3 secret key (falls back to R2 if not specified)."""
+        return self.s3_secret_access_key or self.r2_secret_access_key
+
+
 class Settings(BaseSettings):
     """BrainBot settings with Pydantic validation."""
 
@@ -111,6 +145,9 @@ class Settings(BaseSettings):
 
     # Hardware
     hardware: HardwareConfig = Field(default_factory=HardwareConfig)
+
+    # Network (distributed mode)
+    network: NetworkConfig = Field(default_factory=NetworkConfig)
 
     model_config = {
         "env_prefix": "BRAINBOT_",
@@ -240,10 +277,25 @@ class Settings(BaseSettings):
                     )
                     config_data["hardware"] = hw_config
 
+                # Handle nested network config
+                if "network" in config_data and isinstance(config_data["network"], dict):
+                    config_data["network"] = NetworkConfig(**config_data["network"])
+
                 settings = cls(**config_data)
                 logger.info(f"Loaded settings from {config_path}")
             except Exception as e:
                 logger.warning(f"Failed to load settings from {config_path}: {e}")
+
+        # Load network config from separate file if it exists
+        network_file = settings.config_dir / "network.json"
+        if network_file.exists():
+            try:
+                with open(network_file) as f:
+                    network_data = json.load(f)
+                settings.network = NetworkConfig(**network_data)
+                logger.debug("Loaded network config")
+            except Exception as e:
+                logger.warning(f"Failed to load network config: {e}")
 
         return settings
 

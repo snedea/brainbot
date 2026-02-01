@@ -66,6 +66,16 @@ Pillow>=10.0.0
 # Slack bot
 slack-bolt>=1.18.0
 
+
+# ============ Distributed Network Dependencies ============
+
+# AWS S3/R2 cloud storage client
+boto3>=1.34.0
+
+# Async file I/O (optional, for future async improvements)
+aiofiles>=23.0.0
+
+
 # ============ Future Dependencies ============
 # Uncomment when implementing these features:
 
