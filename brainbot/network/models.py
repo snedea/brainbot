@@ -201,6 +201,9 @@ class NodeRegistryEntry(BaseModel):
     last_heartbeat: datetime = Field(default_factory=datetime.now)
     status: str = "online"  # online, offline, degraded
 
+    # Version tracking
+    version: str = "unknown"  # Git commit hash
+
     # Network info
     ip_address: Optional[str] = None
     last_seen_from: Optional[str] = None  # Where the heartbeat came from

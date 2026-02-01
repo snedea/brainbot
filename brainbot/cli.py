@@ -13,6 +13,7 @@ from .daemon.server import (
     get_running_daemon_pid,
     stop_running_daemon,
 )
+from .version import get_version_full
 
 
 def cmd_start(args: argparse.Namespace) -> int:
@@ -100,11 +101,15 @@ def cmd_status(args: argparse.Namespace) -> int:
         except Exception:
             pass
 
+    # Add version info
+    status["version"] = get_version_full()
+
     if args.json:
         print(json.dumps(status, indent=2))
     else:
         print(f"BrainBot Daemon Status")
         print(f"=" * 40)
+        print(f"Version:     {status['version']}")
         print(f"Running:     Yes (PID {pid})")
         print(f"Data Dir:    {status['data_dir']}")
         print(f"Timezone:    {status['timezone']}")

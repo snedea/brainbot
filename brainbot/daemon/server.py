@@ -24,6 +24,7 @@ except Exception:
 
 from ..config.settings import Settings
 from ..config.defaults import DEFAULT_CLAUDE_MD
+from ..version import get_version, get_version_full
 from ..state.manager import StateManager
 from ..state.models import BotStatus
 from ..schedule.manager import ScheduleManager, SchedulePhase
@@ -1508,6 +1509,7 @@ Write a concise summary:"""
         return {
             "running": self.running,
             "pid": os.getpid(),
+            "version": get_version_full(),
             "uptime": time.time() - self._main_loop_heartbeat if self.running else 0,
             "state": {
                 "status": state.status.value,
@@ -1523,6 +1525,10 @@ Write a concise summary:"""
             "settings": {
                 "timezone": self.settings.timezone,
                 "data_dir": str(self.settings.data_dir),
+            },
+            "node": {
+                "id": self._node_id[:8] if self._node_id else None,
+                "name": self._persona.display_name if self._persona else None,
             },
         }
 

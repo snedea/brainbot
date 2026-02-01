@@ -12,6 +12,7 @@ from .models import (
     NodeRegistryEntry,
 )
 from .storage import StorageClient
+from ..version import get_version
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class NodeRegistry:
             capabilities=[c.value for c in manifest.get_available_capabilities()],
             last_heartbeat=datetime.now(),
             status="online",
+            version=get_version(),
             ip_address=ip_address,
         )
 
@@ -128,6 +130,7 @@ class NodeRegistry:
         # Update heartbeat
         entry.last_heartbeat = datetime.now()
         entry.status = status
+        entry.version = get_version()  # Update version in case code was updated
         if ip_address:
             entry.ip_address = ip_address
             entry.last_seen_from = ip_address
@@ -394,15 +397,24 @@ def format_registry_display(nodes: list[NodeRegistryEntry]) -> str:
     if not nodes:
         return "No nodes registered"
 
+    # Get all unique versions to detect mismatches
+    versions = set(n.version for n in nodes if n.is_online(300))
+    version_mismatch = len(versions) > 1
+
     lines = [
         "BrainBot Network Nodes",
         "=" * 60,
         "",
     ]
 
+    if version_mismatch:
+        lines.append("⚠️  VERSION MISMATCH DETECTED - nodes running different code!")
+        lines.append(f"   Versions: {', '.join(sorted(versions))}")
+        lines.append("")
+
     for node in nodes:
-        status_icon = "*" if node.is_online(300) else " "
-        lines.append(f"{status_icon} {node.persona.display_name}")
+        status_icon = "●" if node.is_online(300) else "○"
+        lines.append(f"{status_icon} {node.persona.display_name} (v{node.version})")
         lines.append(f"  ID:       {node.node_id[:8]}...")
         lines.append(f"  Hostname: {node.hostname}")
         lines.append(f"  Role:     {node.persona.role}")
@@ -420,5 +432,8 @@ def format_registry_display(nodes: list[NodeRegistryEntry]) -> str:
     lines.append(f"Total: {len(nodes)} node(s)")
     online = sum(1 for n in nodes if n.is_online(300))
     lines.append(f"Online: {online}")
+
+    if not version_mismatch and versions:
+        lines.append(f"Version: {list(versions)[0]} (all synced ✓)")
 
     return "\n".join(lines)

@@ -12,6 +12,7 @@ from .registry import NodeRegistry
 from .event_log import EventLog
 from .memory_sync import MemorySyncManager
 from .models import CapabilityManifest, NodePersona
+from ..version import get_version
 
 logger = logging.getLogger(__name__)
 
@@ -188,8 +189,9 @@ class SyncDaemon:
                     "capabilities": [c.value for c in self.manifest.get_available_capabilities()],
                     "cpu_cores": self.manifest.cpu_cores,
                     "ram_gb": round(self.manifest.ram_gb, 1),
+                    "version": get_version(),
                 })
-                logger.info(f"Node registered: {self.persona.display_name}")
+                logger.info(f"Node registered: {self.persona.display_name} (v{get_version()})")
 
             return success
         except Exception as e:
@@ -215,6 +217,7 @@ class SyncDaemon:
                         "heartbeat_count": self._heartbeat_count,
                         "last_sync": self._last_sync.isoformat() if self._last_sync else None,
                         "sync_count": self._sync_count,
+                        "version": get_version(),
                     })
 
                     logger.debug(f"Heartbeat #{self._heartbeat_count}")
