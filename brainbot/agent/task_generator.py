@@ -356,7 +356,7 @@ class TaskGenerator:
             return []
 
         # Get brain context
-        brain_context = self.brain.build_context(max_chars=3000)
+        brain_context = self.brain.build_context()[:3000]
 
         prompt = f"""You are BrainBot, reviewing your memories to find tasks.
 
