@@ -28,7 +28,7 @@ class PeerInfo:
 
     # Identity
     node_id: str
-    address: str  # host:port (e.g., "100.96.197.113:7777")
+    address: str  # host:port (e.g., "192.168.1.100:7777")
 
     # Metadata
     hostname: str = ""

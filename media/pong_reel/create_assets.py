@@ -193,7 +193,7 @@ def create_slide2():
     # Tailscale cloud
     draw.ellipse([800, 630, 1120, 780], outline=(100, 100, 255), width=3)
     draw.text((960, 700), "Tailscale VPN", font=font_med, fill=(100, 100, 255), anchor="mm")
-    draw.text((960, 750), "100.96.197.113 ↔ 100.70.254.21", font=font_small, fill=GRAY, anchor="mm")
+    draw.text((960, 750), "100.x.x.x ↔ 100.y.y.y", font=font_small, fill=GRAY, anchor="mm")
 
     # Connection lines to cloud
     draw.line([325, 600, 860, 680], fill=(100, 100, 255), width=2)

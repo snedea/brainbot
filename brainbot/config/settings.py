@@ -97,7 +97,7 @@ class MeshConfig(BaseModel):
     """P2P mesh network configuration."""
     enabled: bool = False
     port: int = 7777
-    seed_peers: list[str] = Field(default_factory=list)  # e.g., ["100.96.197.113:7777"]
+    seed_peers: list[str] = Field(default_factory=list)  # e.g., ["192.168.1.100:7777"]
     gossip_interval_seconds: int = 30
     heartbeat_interval_seconds: int = 10
     sync_interval_seconds: int = 60
