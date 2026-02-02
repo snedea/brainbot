@@ -34,10 +34,61 @@ from .pong import (
     pause_face_animator, resume_face_animator,
 )
 
+# Slack integration for game announcements
+try:
+    from ..network.slack_network import get_slack_network, SlackNetworkBot
+    SLACK_AVAILABLE = True
+except ImportError:
+    SLACK_AVAILABLE = False
+    get_slack_network = None
+    SlackNetworkBot = None
+
 if TYPE_CHECKING:
     from ..network.mesh.node import MeshNode
 
 logger = logging.getLogger(__name__)
+
+
+def post_game_event(
+    event_type: str,
+    node_name: str,
+    opponent_name: Optional[str] = None,
+    winner: Optional[str] = None,
+    left_score: int = 0,
+    right_score: int = 0,
+    max_rally: int = 0,
+) -> None:
+    """Post a game event to Slack."""
+    if not SLACK_AVAILABLE:
+        return
+
+    try:
+        import os
+        slack = get_slack_network(
+            node_id=os.environ.get("BRAINBOT_NODE_ID", "pong-player"),
+            node_name=node_name,
+        )
+        if not slack:
+            return
+
+        if event_type == "host_waiting":
+            slack._post_to_network(
+                f":video_game: *{node_name}* is hosting a Pong game! Waiting for opponent...",
+            )
+        elif event_type == "player_joined":
+            slack._post_to_network(
+                f":joystick: *{opponent_name}* joined the game! *{node_name}* vs *{opponent_name}* - Game on!",
+            )
+        elif event_type == "game_over":
+            trophy = ":trophy:" if winner else ":video_game:"
+            slack._post_to_network(
+                f"{trophy} *Pong Match Complete!*\n"
+                f"> :tada: Winner: *{winner}*\n"
+                f"> :1234: Score: {left_score} - {right_score}\n"
+                f"> :ping_pong: Max Rally: {max_rally}",
+            )
+    except Exception as e:
+        logger.warning(f"Failed to post game event to Slack: {e}")
 
 
 class GameRole(Enum):
@@ -350,6 +401,9 @@ class NetPongGame(PongGame):
         self._connected = True
         logger.info(f"Player joined: {persona}")
 
+        # Announce to Slack
+        post_game_event("player_joined", self.host_persona, opponent_name=persona)
+
     async def connect_to_host(self, host_address: str) -> bool:
         """Connect to a hosted game (for CLIENT role)."""
         if self.role != GameRole.CLIENT:
@@ -503,6 +557,9 @@ class NetPongGame(PongGame):
         frame_count = 0
 
         logger.info("Waiting for player to connect...")
+
+        # Announce to Slack
+        post_game_event("host_waiting", self.host_persona)
 
         try:
             while self.running and not self.game_over:
@@ -672,7 +729,20 @@ async def host_game(
         difficulty=difficulty,
     )
 
-    return await game.run_host(max_duration=max_duration)
+    result = await game.run_host(max_duration=max_duration)
+
+    # Announce game results to Slack (host announces)
+    post_game_event(
+        "game_over",
+        persona,
+        opponent_name=result.get("opponent"),
+        winner=result.get("winner"),
+        left_score=result.get("left_score", 0),
+        right_score=result.get("right_score", 0),
+        max_rally=result.get("max_rally", 0),
+    )
+
+    return result
 
 
 async def join_game(
