@@ -433,6 +433,42 @@ To add a new node to your BrainBot network:
 - **Audio**: USB microphones, 3.5mm speakers
 - **Cooling**: PWM fans with temperature control
 
+### Build Your Own BrainBot
+
+Want to build the exact hardware shown in this project? Here's what we use:
+
+<table>
+<tr>
+<td width="50%">
+
+**[FREENOVE Raspberry Pi 5 Case with Screen](https://amzn.to/3ZNKWK6)**
+
+The all-in-one enclosure includes:
+- 4.3" Touchscreen display
+- 128GB M.2 NVMe SSD (800 MB/s)
+- 5MP Camera module
+- 1.3" OLED status screen
+- Stereo speakers
+- 3.5mm & optical audio (S/PDIF)
+- Active cooling
+
+*Affiliate link - helps support the project*
+
+</td>
+<td width="50%">
+
+![FREENOVE Pi 5 Case](https://m.media-amazon.com/images/I/71Z0URU6RsL._AC_SL1500_.jpg)
+
+</td>
+</tr>
+</table>
+
+**BrainBot Running on the Hardware:**
+
+![BrainBot Hardware](media/brainbot-hardware.jpg)
+
+*BrainBot TUI running on Raspberry Pi 5 with the FREENOVE case. The 1.3" OLED shows system stats (CPU temp, fan speed), while the main 4.3" touchscreen displays the chat interface with [TinyLlama-1.1B-Chat-v1.0](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0) running locally via [llama.cpp](https://github.com/ggerganov/llama.cpp). We use the [Q4_K_M quantized GGUF](https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF) version (~670MB) which runs entirely offline with ~1.5GB RAM.*
+
 ---
 
 ## Screenshots & Media
