@@ -1,11 +1,17 @@
-# BrainBot
+<p align="center">
+  <img src="assets/logo/brainbot-logo-256.png" alt="BrainBot Logo" width="128">
+</p>
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-Compatible-red.svg)](https://www.raspberrypi.org/)
-[![Powered by Claude](https://img.shields.io/badge/Powered%20by-Claude%20Code-blueviolet.svg)](https://claude.ai)
+<h1 align="center">BrainBot</h1>
 
-**One brain. Many bodies. Powered by Claude Code agents.**
+<p align="center">
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://www.raspberrypi.org/"><img src="https://img.shields.io/badge/Raspberry%20Pi-Compatible-red.svg" alt="Raspberry Pi"></a>
+  <a href="https://claude.ai"><img src="https://img.shields.io/badge/Powered%20by-Claude%20Code-blueviolet.svg" alt="Powered by Claude"></a>
+</p>
+
+<p align="center"><strong>One brain. Many bodies. Powered by Claude Code agents.</strong></p>
 
 [![Watch BrainBot agents play Pong](https://img.youtube.com/vi/bliV394AMk8/maxresdefault.jpg)](https://youtu.be/bliV394AMk8?si=lvWQLMs7fNZSFcFk)
 
