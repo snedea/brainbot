@@ -31,7 +31,7 @@ This guide will help you set up BrainBot on your Raspberry Pi for the best exper
 
 3. **Clone and Setup BrainBot**:
    ```bash
-   git clone https://github.com/yourusername/brainbot.git
+   git clone https://github.com/brainbot-lab/brainbot.git
    cd brainbot
    ./setup.sh
    ```
@@ -53,7 +53,7 @@ If you prefer to install step by step:
 
 2. **Clone Repository**:
    ```bash
-   git clone https://github.com/yourusername/brainbot.git
+   git clone https://github.com/brainbot-lab/brainbot.git
    cd brainbot
    ```
 

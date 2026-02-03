@@ -245,7 +245,7 @@ psutil>=5.9.0           # System monitoring
 
 ### Local Development
 ```bash
-git clone https://github.com/snedea/brainbot.git
+git clone https://github.com/brainbot-lab/brainbot.git
 cd brainbot
 
 # Create environment

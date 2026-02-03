@@ -349,7 +349,7 @@ fan_auto()  # Temperature-based control
 
 ```bash
 # Clone the repository
-git clone https://github.com/snedea/brainbot.git
+git clone https://github.com/brainbot-lab/brainbot.git
 cd brainbot
 
 # Create virtual environment

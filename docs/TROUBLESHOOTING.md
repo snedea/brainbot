@@ -407,5 +407,5 @@ Additional info:
 **Still need help?**
 - 📖 Check the [main README](../README.md)
 - 🍓 See [Raspberry Pi specific guide](SETUP_PI.md)
-- 🐛 [Open an issue on GitHub](https://github.com/yourusername/brainbot/issues)
+- 🐛 [Open an issue on GitHub](https://github.com/brainbot-lab/brainbot/issues)
 - 💬 Join our discussions for questions
