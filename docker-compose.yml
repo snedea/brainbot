@@ -1,0 +1,54 @@
+services:
+  brainbot:
+    build: .
+    container_name: brainbot
+    restart: unless-stopped
+
+    # Security: No privileged access
+    privileged: false
+    read_only: false
+
+    # Security: Drop all capabilities
+    cap_drop:
+      - ALL
+
+    # Security: No new privileges
+    security_opt:
+      - no-new-privileges:true
+
+    # Environment variables (secrets)
+    environment:
+      # Slack credentials
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+      - SLACK_NETWORK_CHANNEL=${SLACK_NETWORK_CHANNEL}
+
+      # R2 credentials
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET=${R2_BUCKET}
+
+      # BrainBot settings
+      - BRAINBOT_LOG_LEVEL=INFO
+      - BRAINBOT_TIMEZONE=America/Chicago
+
+    # Persistent storage for BrainBot data only
+    volumes:
+      - brainbot_data:/home/brainbot/.brainbot
+      # Mount host Claude config for subscription auth
+      - ${HOME}/.claude:/home/brainbot/.claude
+
+    # Network: Allow outbound only (R2, Slack APIs)
+    # No ports exposed - it doesn't need inbound connections
+    networks:
+      - brainbot_net
+
+# Isolated network
+networks:
+  brainbot_net:
+    driver: bridge
+
+# Named volume for persistence (isolated from host)
+volumes:
+  brainbot_data:

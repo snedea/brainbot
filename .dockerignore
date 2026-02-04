@@ -1,0 +1,54 @@
+# Ignore sensitive files
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore local dev files
+venv/
+venv_wsl/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Ignore docs (not needed in container)
+docs/
+*.md
+LICENSE
+
+# Ignore voice mode stuff (not needed in container)
+voice/
+stt/
+tts/
+llm/
+agent/
+*.ppn
+*.wav
+
+# Ignore scripts not needed in container
+scripts/
+setup.sh
+setup_voice.sh
+launch_voice.sh
+run_daemon.sh
+*.service
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore test files
+tests/
+test_*.py
+
+# Ignore the old brain_bot.py (chat UI, not needed)
+brain_bot.py
+config/
